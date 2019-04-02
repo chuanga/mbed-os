@@ -29,6 +29,7 @@ if __name__ == "__main__":
 from copy import copy
 from yaml import dump_all
 import argparse
+from past.builtins import basestring
 
 from tools.targets import Target, set_targets_json_location, TARGET_MAP
 
@@ -79,10 +80,10 @@ def check_inherits(dict):
 
 DEVICE_HAS_ALLOWED = ["ANALOGIN", "ANALOGOUT", "CAN", "ETHERNET", "EMAC",
                       "FLASH", "I2C", "I2CSLAVE", "I2C_ASYNCH", "INTERRUPTIN",
-                      "LOWPOWERTIMER", "PORTIN", "PORTINOUT", "PORTOUT",
+                      "LPTICKER", "PORTIN", "PORTINOUT", "PORTOUT",
                       "PWMOUT", "RTC", "TRNG","SERIAL", "SERIAL_ASYNCH",
                       "SERIAL_FC", "SLEEP", "SPI", "SPI_ASYNCH", "SPISLAVE",
-                      "STORAGE", "STCLK_OFF_DURING_SLEEP"]
+                      "STORAGE", "SYSTICK_CLK_OFF_DURING_SLEEP"]
 def check_device_has(dict):
     for name in dict.get("device_has", []):
         if name not in DEVICE_HAS_ALLOWED:
@@ -274,4 +275,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

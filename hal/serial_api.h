@@ -3,6 +3,7 @@
 /** @{*/
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@
 #define MBED_SERIAL_API_H
 
 #include "device.h"
+#include "pinmap.h"
 #include "hal/buffer.h"
 #include "hal/dma_api.h"
 
@@ -218,6 +220,42 @@ void serial_pinout_tx(PinName tx);
  * @param txflow The RX pin name
  */
 void serial_set_flow_control(serial_t *obj, FlowControl type, PinName rxflow, PinName txflow);
+
+/** Get the pins that support Serial TX
+ *
+ * Return a PinMap array of pins that support Serial TX. The
+ * array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *serial_tx_pinmap(void);
+
+/** Get the pins that support Serial RX
+ *
+ * Return a PinMap array of pins that support Serial RX. The
+ * array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *serial_rx_pinmap(void);
+
+/** Get the pins that support Serial CTS
+ *
+ * Return a PinMap array of pins that support Serial CTS. The
+ * array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *serial_cts_pinmap(void);
+
+/** Get the pins that support Serial RTS
+ *
+ * Return a PinMap array of pins that support Serial RTS. The
+ * array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *serial_rts_pinmap(void);
 
 #if DEVICE_SERIAL_ASYNCH
 

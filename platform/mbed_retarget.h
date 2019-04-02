@@ -1,6 +1,7 @@
 /*
  * mbed Microcontroller Library
  * Copyright (c) 2006-2016 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,7 +109,7 @@ class DirHandle;
  * @param fd file descriptor - STDIN_FILENO, STDOUT_FILENO or STDERR_FILENO
  * @return  pointer to FileHandle to override normal stream otherwise NULL
  */
-FileHandle* mbed_target_override_console(int fd);
+FileHandle *mbed_target_override_console(int fd);
 
 /** Applications may implement this to change stdin, stdout, stderr.
  *
@@ -130,8 +131,29 @@ FileHandle* mbed_target_override_console(int fd);
  * @param fd file descriptor - STDIN_FILENO, STDOUT_FILENO or STDERR_FILENO
  * @return  pointer to FileHandle to override normal stream otherwise NULL
  */
-FileHandle* mbed_override_console(int fd);
+FileHandle *mbed_override_console(int fd);
 
+/** Look up the Mbed file handle corresponding to a file descriptor
+ *
+ * This conversion function permits an application to find the underlying
+ * FileHandle object corresponding to a POSIX file descriptor.
+ *
+ * This allows access to specialized behavior only available via the
+ * FileHandle API.
+ *
+ * Example of saving power by disabling console input - for buffered serial,
+ * this would release the RX interrupt handler, which would release the
+ * deep sleep lock.
+ * @code
+ * mbed_file_handle(STDIN_FILENO)->enable_input(false);
+ * @endcode
+ *
+ * @param fd file descriptor
+ * @return   FileHandle pointer
+ *           NULL if descriptor does not correspond to a FileHandle (only
+ *           possible if it's not open with current implementation).
+ */
+FileHandle *mbed_file_handle(int fd);
 }
 
 typedef mbed::DirHandle DIR;
@@ -483,7 +505,7 @@ struct statvfs {
  * consistency where structure may be different with different toolchains
  */
 struct dirent {
-    char d_name[NAME_MAX+1]; ///< Name of file
+    char d_name[NAME_MAX + 1]; ///< Name of file
     uint8_t d_type;          ///< Type of file
 };
 
@@ -515,14 +537,15 @@ extern "C" {
     int open(const char *path, int oflag, ...);
 #ifndef __IAR_SYSTEMS_ICC__ /* IAR provides fdopen itself */
 #if __cplusplus
-    std::FILE* fdopen(int fildes, const char *mode);
+    std::FILE *fdopen(int fildes, const char *mode);
 #else
-    FILE* fdopen(int fildes, const char *mode);
+    FILE *fdopen(int fildes, const char *mode);
 #endif
 #endif
     ssize_t write(int fildes, const void *buf, size_t nbyte);
     ssize_t read(int fildes, void *buf, size_t nbyte);
     off_t lseek(int fildes, off_t offset, int whence);
+    int ftruncate(int fildes, off_t length);
     int isatty(int fildes);
     int fsync(int fildes);
     int fstat(int fildes, struct stat *st);
@@ -531,12 +554,12 @@ extern "C" {
     int close(int fildes);
     int stat(const char *path, struct stat *st);
     int statvfs(const char *path, struct statvfs *buf);
-    DIR *opendir(const char*);
+    DIR *opendir(const char *);
     struct dirent *readdir(DIR *);
-    int closedir(DIR*);
-    void rewinddir(DIR*);
-    long telldir(DIR*);
-    void seekdir(DIR*, long);
+    int closedir(DIR *);
+    void rewinddir(DIR *);
+    long telldir(DIR *);
+    void seekdir(DIR *, long);
     int mkdir(const char *name, mode_t n);
 #if __cplusplus
 }; // extern "C"
@@ -556,7 +579,7 @@ namespace mbed {
  *
  *  @returns        a pointer to FILE
  */
-std::FILE* fdopen(mbed::FileHandle *fh, const char *mode);
+std::FILE *fdopen(mbed::FileHandle *fh, const char *mode);
 
 /** Bind an mbed FileHandle to a POSIX file descriptor
  *

@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#if !MBED_TICKLESS
+#ifndef MBED_TICKLESS
 #error [NOT_SUPPORTED] Tickless mode not supported for this target.
 #endif
 
-#if !DEVICE_LOWPOWERTIMER
+#if !DEVICE_LPTICKER
 #error [NOT_SUPPORTED] Current SysTimer implementation requires lp ticker support.
 #endif
 
@@ -53,12 +53,12 @@ private:
 
 public:
     SysTimerTest() :
-            SysTimer(), _sem(0, 1)
+        SysTimer(), _sem(0, 1)
     {
     }
 
     SysTimerTest(const ticker_data_t *data) :
-            SysTimer(data), _sem(0, 1)
+        SysTimer(data), _sem(0, 1)
     {
     }
 
@@ -99,6 +99,10 @@ void mock_ticker_fire_interrupt()
 {
 }
 
+void mock_ticker_free()
+{
+}
+
 const ticker_info_t *mock_ticker_get_info()
 {
     static const ticker_info_t mock_ticker_info = {
@@ -115,6 +119,7 @@ ticker_interface_t mock_ticker_interface = {
     .clear_interrupt = mock_ticker_clear_interrupt,
     .set_interrupt = mock_ticker_set_interrupt,
     .fire_interrupt = mock_ticker_fire_interrupt,
+    .free = mock_ticker_free,
     .get_info = mock_ticker_get_info,
 };
 
@@ -240,7 +245,10 @@ void test_handler_called_once(void)
     int32_t sem_slots = st.sem_wait(0);
     TEST_ASSERT_EQUAL_INT32(0, sem_slots);
 
-    sem_slots = st.sem_wait(osWaitForever);
+    // Wait in a busy loop to prevent entering sleep or deepsleep modes.
+    while (sem_slots != 1) {
+        sem_slots = st.sem_wait(0);
+    }
     us_timestamp_t t2 = st.get_time();
     TEST_ASSERT_EQUAL_INT32(1, sem_slots);
     TEST_ASSERT_EQUAL_UINT32(1, st.get_tick());
@@ -251,6 +259,7 @@ void test_handler_called_once(void)
     TEST_ASSERT_EQUAL_UINT32(1, st.get_tick());
 }
 
+#if DEVICE_SLEEP
 /** Test wake up from sleep
  *
  * Given a SysTimer with a tick scheduled in the future
@@ -279,7 +288,7 @@ void test_sleep(void)
     TEST_ASSERT_UINT64_WITHIN(DELAY_DELTA_US, DELAY_US, timer.read_high_resolution_us());
 }
 
-#if DEVICE_LOWPOWERTIMER
+#if DEVICE_LPTICKER && !MBED_CONF_TARGET_TICKLESS_FROM_US_TICKER
 /** Test wake up from deepsleep
  *
  * Given a SysTimer with a tick scheduled in the future
@@ -307,7 +316,7 @@ void test_deepsleep(void)
 
     lptimer.start();
     st.schedule_tick(TEST_TICKS);
-    TEST_ASSERT_TRUE_MESSAGE(sleep_manager_can_deep_sleep(), "Deep sleep should be allowed");
+    TEST_ASSERT_TRUE_MESSAGE(sleep_manager_can_deep_sleep_test_check(), "Deep sleep should be allowed");
     while (st.sem_wait(0) != 1) {
         sleep();
     }
@@ -315,6 +324,7 @@ void test_deepsleep(void)
 
     TEST_ASSERT_UINT64_WITHIN(DELAY_DELTA_US, DELAY_US, lptimer.read_high_resolution_us());
 }
+#endif
 #endif
 
 utest::v1::status_t test_setup(const size_t number_of_cases)
@@ -330,9 +340,11 @@ Case cases[] = {
     Case("Tick can be cancelled", test_cancel_tick),
     Case("Schedule zero ticks", test_schedule_zero),
     Case("Handler called once", test_handler_called_once),
+#if DEVICE_SLEEP
     Case("Wake up from sleep", test_sleep),
-#if DEVICE_LOWPOWERTIMER
+#if DEVICE_LPTICKER && !MBED_CONF_TARGET_TICKLESS_FROM_US_TICKER
     Case("Wake up from deep sleep", test_deepsleep),
+#endif
 #endif
 
 };

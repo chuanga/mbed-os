@@ -20,8 +20,6 @@
 #include "unity.h"
 #include "utest.h"
 
-#if MBED_CONF_APP_TEST_WIFI || MBED_CONF_APP_TEST_ETHERNET
-
 #include "mbed.h"
 
 #include "EMAC.h"
@@ -35,6 +33,32 @@
 #include "emac_ctp.h"
 
 using namespace utest::v1;
+
+/* For LPC boards define the memory bank ourselves to give us section placement
+   control */
+#ifndef ETHMEM_SECTION
+#if defined(TARGET_LPC4088) || defined(TARGET_LPC4088_DM)
+#  if defined (__ICCARM__)
+#     define ETHMEM_SECTION
+#  elif defined(TOOLCHAIN_GCC_CR)
+#     define ETHMEM_SECTION __attribute__((section(".data.$RamPeriph32")))
+#  else
+#     define ETHMEM_SECTION __attribute__((section("AHBSRAM0"),aligned))
+#  endif
+#elif defined(TARGET_LPC1768) || defined(TARGET_LPC1769)
+#  if defined (__ICCARM__)
+#     define ETHMEM_SECTION
+#  elif defined(TOOLCHAIN_GCC_CR)
+#     define ETHMEM_SECTION __attribute__((section(".data.$RamPeriph32")))
+#  else
+#     define ETHMEM_SECTION __attribute__((section("AHBSRAM1"),aligned))
+#  endif
+#endif
+#endif
+
+#ifndef ETHMEM_SECTION
+#define ETHMEM_SECTION
+#endif
 
 typedef struct {
     int length;
@@ -55,7 +79,7 @@ typedef struct {
 extern struct netif *netif_list;
 
 // Broadcast address
-const unsigned char eth_mac_broadcast_addr[ETH_MAC_ADDR_LEN] = {0xff,0xff,0xff,0xff,0xff,0xff};
+const unsigned char eth_mac_broadcast_addr[ETH_MAC_ADDR_LEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 // MTU size
 static int eth_mtu_size = 0;
@@ -63,7 +87,12 @@ static int eth_mtu_size = 0;
 // Event queue
 static rtos::Semaphore worker_loop_semaphore;
 static rtos::Semaphore link_status_semaphore;
-static EventQueue worker_loop_event_queue(20 * EVENTS_EVENT_SIZE);
+
+#if defined (__ICCARM__)
+#pragma location = ".ethusbram"
+#endif
+ETHMEM_SECTION static EventQueue worker_loop_event_queue(20 * EVENTS_EVENT_SIZE);
+
 static void worker_loop_event_cb(int event);
 static Event<void(int)> worker_loop_event(&worker_loop_event_queue, worker_loop_event_cb);
 static void link_input_event_cb(void *buf);
@@ -182,9 +211,9 @@ void emac_if_validate_outgoing_msg(void)
                 if (!(outgoing_msgs[i].flags & PRINTED)) {
                     if ((trace_level & TRACE_SUCCESS) || ((trace_level & TRACE_FAILURE) && failure)) {
                         printf("response: receipt number %i %s %s %s\r\n\r\n", outgoing_msgs[i].receipt_number,
-                            outgoing_msgs[i].flags & INVALID_LENGHT ? "LENGTH INVALID" : "LENGTH OK",
-                            outgoing_msgs[i].flags & INVALID_DATA ? "DATA INVALID" : "DATA OK",
-                            outgoing_msgs[i].flags & BROADCAST ? "BROADCAST" : "UNICAST");
+                               outgoing_msgs[i].flags & INVALID_LENGHT ? "LENGTH INVALID" : "LENGTH OK",
+                               outgoing_msgs[i].flags & INVALID_DATA ? "DATA INVALID" : "DATA OK",
+                               outgoing_msgs[i].flags & BROADCAST ? "BROADCAST" : "UNICAST");
                         outgoing_msgs[i].flags |= PRINTED;
                     }
                 }
@@ -221,7 +250,7 @@ bool emac_if_update_reply_to_outgoing_msg(int receipt_number, int length, int in
             /* If length of the sent message is smaller than Ethernet minimum frame length, validates against
                minimum frame length or sent length (in case frame has been converted to be longer than minimum
                length does not validate length)  */
-            if (length != ETH_FRAME_MIN_LEN && outgoing_msgs[outgoing_msg_index].length != length && length < ETH_FRAME_MIN_LEN ) {
+            if (length != ETH_FRAME_MIN_LEN && length != ETH_FRAME_PADD_LEN && outgoing_msgs[outgoing_msg_index].length != length && length < ETH_FRAME_MIN_LEN) {
                 outgoing_msgs[outgoing_msg_index].flags |= INVALID_LENGHT;
             }
         } else {
@@ -307,22 +336,22 @@ void emac_if_reset_all_error_flags(void)
 
 void emac_if_print_error_flags(void)
 {
-   int error_flags_value = emac_if_get_error_flags();
+    int error_flags_value = emac_if_get_error_flags();
 
-   char no_resp_message[50];
-   if (error_flags_value & NO_RESPONSE) {
-       snprintf(no_resp_message, 50, "no response from echo server, counter: %i", no_response_cnt);
-   } else if (no_response_cnt > 0) {
-       printf("no response from echo server, counter: %i\r\n\r\n", no_response_cnt);
-   }
+    char no_resp_message[50];
+    if (error_flags_value & NO_RESPONSE) {
+        snprintf(no_resp_message, 50, "no response from echo server, counter: %i", no_response_cnt);
+    } else if (no_response_cnt > 0) {
+        printf("no response from echo server, counter: %i\r\n\r\n", no_response_cnt);
+    }
 
-   printf("test result: %s%s%s%s%s%s\r\n\r\n",
-       error_flags_value ? "Test FAILED, reason: ": "PASS",
-       error_flags_value & TEST_FAILED ? "test failed ": "",
-       error_flags_value & MSG_VALID_ERROR ? "message content validation error ": "",
-       error_flags_value & OUT_OF_MSG_DATA ? "out of message validation data storage ": "",
-       error_flags_value & NO_FREE_MEM_BUF ? "no free memory buffers ": "",
-       error_flags_value & NO_RESPONSE ? no_resp_message: "");
+    printf("test result: %s%s%s%s%s%s\r\n\r\n",
+           error_flags_value ? "Test FAILED, reason: " : "PASS",
+           error_flags_value & TEST_FAILED ? "test failed " : "",
+           error_flags_value & MSG_VALID_ERROR ? "message content validation error " : "",
+           error_flags_value & OUT_OF_MSG_DATA ? "out of message validation data storage " : "",
+           error_flags_value & NO_FREE_MEM_BUF ? "no free memory buffers " : "",
+           error_flags_value & NO_RESPONSE ? no_resp_message : "");
 }
 
 void emac_if_set_trace_level(char trace_level_value)
@@ -340,14 +369,14 @@ void emac_if_trace_to_ascii_hex_dump(const char *prefix, int len, unsigned char 
     int line_len = 0;
 
     for (int i = 0; i < len; i++) {
-       if ((line_len % 14) == 0) {
-           if (line_len != 0) {
-               printf("\r\n");
-           }
-           printf("%s %06x", prefix, line_len);
-       }
-       line_len++;
-       printf(" %02x", data[i]);
+        if ((line_len % 14) == 0) {
+            if (line_len != 0) {
+                printf("\r\n");
+            }
+            printf("%s %06x", prefix, line_len);
+        }
+        line_len++;
+        printf(" %02x", data[i]);
     }
     printf("\r\n\r\n");
 }
@@ -386,7 +415,7 @@ void emac_if_check_memory(bool output)
 void emac_if_set_memory(bool memory)
 {
     static bool memory_value = true;
-    if (memory_value != memory ) {
+    if (memory_value != memory) {
         memory_value = memory;
         EmacTestMemoryManager *mem_mngr = emac_m_mngr_get();
         mem_mngr->set_memory_available(memory);
@@ -437,7 +466,7 @@ static void link_input_event_cb(void *buf)
                     worker_loop_event_queue.call(current_test_step_cb_fnc, INPUT);
                 }
 #if MBED_CONF_APP_ECHO_SERVER
-            // Echoes only if configured as echo server
+                // Echoes only if configured as echo server
             } else if (function == CTP_FORWARD) {
                 emac_if_memory_buffer_write(buf, eth_output_frame_data, false);
                 emac_if_get()->link_out(buf);
@@ -448,9 +477,9 @@ static void link_input_event_cb(void *buf)
             emac_if_add_echo_server_addr(&eth_input_frame_data[6]);
 
             if (trace_level & TRACE_ETH_FRAMES) {
-                 printf("INP> LEN %i\r\n\r\n", length);
-                 const char trace_type[] = "INP>";
-                 emac_if_trace_to_ascii_hex_dump(trace_type, ETH_FRAME_HEADER_LEN, eth_input_frame_data);
+                printf("INP> LEN %i\r\n\r\n", length);
+                const char trace_type[] = "INP>";
+                emac_if_trace_to_ascii_hex_dump(trace_type, ETH_FRAME_HEADER_LEN, eth_input_frame_data);
             }
         }
     }
@@ -460,7 +489,11 @@ static void link_input_event_cb(void *buf)
     }
 }
 
-static unsigned char thread_stack[2048];
+
+#if defined (__ICCARM__)
+#pragma location = ".ethusbram"
+#endif
+ETHMEM_SECTION static unsigned char thread_stack[2048];
 
 void worker_loop(void);
 
@@ -549,5 +582,3 @@ void emac_if_set_mtu_size(int mtu_size)
 {
     eth_mtu_size = mtu_size;
 }
-
-#endif

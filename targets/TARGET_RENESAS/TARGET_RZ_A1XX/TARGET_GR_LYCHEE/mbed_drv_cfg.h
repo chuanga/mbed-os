@@ -32,4 +32,20 @@
 //#define USE_EXTAL_CLK
 //#define USE_RTCX3_CLK
 
+#define RENESAS_RZ_A1_P0_CLK   CM1_RENESAS_RZ_A1_P0_CLK
+
+/* Clock Mode 1 */
+/* CLKIN is 48MHz */
+/* Divider 1 uses 1/4 ratio, PLL x32 is ON */
+#define RENESAS_RZ_A1_SYS_CLK  ((CM1_RENESAS_RZ_A1_CLKIN * 32U) / 4U)
+
+#define LP_TICKER_MTU2_CH      2
+
+/* flash (W25Q64JV) */
+#define FLASH_BASE                 (0x18000000UL) /**< Flash Base Address */
+#define FLASH_SIZE                 (0x00800000UL) /**< Available Flash Memory */
+#define FLASH_PAGE_SIZE            256            /**< Flash Memory page size (interleaving off) */
+                                                  /**< Maximum size per one writing is 256 byte and minimum size per one writing is 1 byte */
+#define FLASH_SECTOR_SIZE          4096           /**< Flash Memory sector size (interleaving off) */
+
 #endif

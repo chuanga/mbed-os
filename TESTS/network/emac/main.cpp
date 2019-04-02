@@ -15,31 +15,30 @@
  * limitations under the License.
  */
 
-#if !defined(MBED_CONF_APP_TEST_WIFI)         || \
-    !defined(MBED_CONF_APP_TEST_ETHERNET)     || \
-    !defined(MBED_CONF_APP_ECHO_SERVER)       || \
+#if !defined(MBED_CONF_APP_ECHO_SERVER)       || \
     !defined(MBED_CONF_APP_ECHO_SERVER_TRACE) || \
-    !defined(MBED_CONF_APP_WIFI_SCAN)         || \
-    !defined(MBED_CONF_APP_WIFI_SSID )        || \
-    !defined(MBED_CONF_APP_WIFI_SECURITY)     || \
-    !defined(MBED_CONF_APP_WIFI_PASSWORD)
+    !defined(MBED_CONF_APP_WIFI_SCAN)
 #error [NOT_SUPPORTED] Requires parameters from mbed_app.json
 #endif
 
-#if !MBED_CONF_APP_TEST_WIFI && !MBED_CONF_APP_TEST_ETHERNET
+#define ETHERNET 1
+#define WIFI 2
+
+#if MBED_CONF_TARGET_NETWORK_DEFAULT_INTERFACE_TYPE != ETHERNET && \
+    MBED_CONF_TARGET_NETWORK_DEFAULT_INTERFACE_TYPE != WIFI
 #error [NOT_SUPPORTED] Either wifi or ethernet testing need to be enabled
 #endif
-#if MBED_CONF_APP_TEST_WIFI && MBED_CONF_APP_TEST_ETHERNET
-#error [NOT_SUPPORTED] Both wifi and ethernet testing cannot be enabled
-#endif
-#if MBED_CONF_APP_TEST_WIFI
-#if !defined(TARGET_UBLOX_EVK_ODIN_W2) && !defined(TARGET_REALTEK_RTL8195AM)
-#error [NOT_SUPPORTED] Tests are valid only for UBLOX_EVK_ODIN_W2 and REALTEK_RTL8195AM
-#endif
-#endif
 
-#ifndef DEVICE_EMAC
-#error [NOT_SUPPORTED] Device EMAC has to be enabled for the target
+#if MBED_CONF_TARGET_NETWORK_DEFAULT_INTERFACE_TYPE == WIFI
+#if !defined(TARGET_UBLOX_EVK_ODIN_W2)      && \
+    !defined(TARGET_REALTEK_RTL8195AM)      && \
+    !defined(TARGET_MTB_ADV_WISE_1530)      && \
+    !defined(TARGET_MTB_USI_WM_BN_BM_22)    && \
+    !defined(TARGET_MTB_MXCHIP_EMW3166)     && \
+    !defined(TARGET_MTB_UBLOX_ODIN_W2)      && \
+    !defined(TARGET_UNO_91H)
+#error [NOT_SUPPORTED] Wifi tests are not valid for the target
+#endif
 #endif
 
 #include "greentea-client/test_env.h"
@@ -52,10 +51,16 @@
 using namespace utest::v1;
 
 // Test setup
-utest::v1::status_t test_setup(const size_t number_of_cases) {
+utest::v1::status_t test_setup(const size_t number_of_cases)
+{
 #if !MBED_CONF_APP_ECHO_SERVER
-    GREENTEA_SETUP(600, "default_auto");
-#endif
+#ifdef MBED_GREENTEA_TEST_EMAC_TIMEOUT_S
+    GREENTEA_SETUP(MBED_GREENTEA_TEST_EMAC_TIMEOUT_S, "default_auto");
+#else
+    GREENTEA_SETUP(1400, "default_auto");
+#endif // #ifdef MBED_GREENTEA_TEST_EMAC_TIMEOUT_S
+#endif // #if !MBED_CONF_APP_ECHO_SERVER
+
     return verbose_test_setup_handler(number_of_cases);
 }
 
@@ -65,6 +70,7 @@ Case cases[] = {
     Case("EMAC unicast", test_emac_unicast),
     Case("EMAC unicast frame length", test_emac_unicast_frame_len),
     Case("EMAC unicast burst", test_emac_unicast_burst),
+    Case("EMAC unicast long", test_emac_unicast_long),
     Case("EMAC multicast filter", test_emac_multicast_filter),
     Case("EMAC memory", test_emac_memory)
 };

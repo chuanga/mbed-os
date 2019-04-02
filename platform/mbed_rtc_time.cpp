@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +30,11 @@ static int (*_rtc_isenabled)(void) = rtc_isenabled;
 static time_t (*_rtc_read)(void) = rtc_read;
 static void (*_rtc_write)(time_t t) = rtc_write;
 
-#elif DEVICE_LOWPOWERTIMER
+#elif DEVICE_LPTICKER
 
 #include "drivers/LowPowerTimer.h"
+
+#define US_PER_SEC 1000000
 
 static SingletonPtr<mbed::LowPowerTimer> _rtc_lp_timer;
 static uint64_t _rtc_lp_base;
@@ -50,11 +53,12 @@ static int _rtc_lpticker_isenabled(void)
 
 static time_t _rtc_lpticker_read(void)
 {
-    return (uint64_t)_rtc_lp_timer->read() + _rtc_lp_base;
+    return _rtc_lp_timer->read_high_resolution_us() / US_PER_SEC + _rtc_lp_base;
 }
 
 static void _rtc_lpticker_write(time_t t)
 {
+    _rtc_lp_timer->reset();
     _rtc_lp_base = t;
 }
 
@@ -63,23 +67,33 @@ static int (*_rtc_isenabled)(void) = _rtc_lpticker_isenabled;
 static time_t (*_rtc_read)(void) = _rtc_lpticker_read;
 static void (*_rtc_write)(time_t t) = _rtc_lpticker_write;
 
-#else /* DEVICE_LOWPOWERTIMER */
+#else /* DEVICE_LPTICKER */
 
 static void (*_rtc_init)(void) = NULL;
 static int (*_rtc_isenabled)(void) = NULL;
 static time_t (*_rtc_read)(void) = NULL;
 static void (*_rtc_write)(time_t t) = NULL;
-#endif /* DEVICE_LOWPOWERTIMER */
+#endif /* DEVICE_LPTICKER */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-#if defined (__ICCARM__)
-time_t __time32(time_t *timer)
-#else
-time_t time(time_t *timer)
-#endif
 
+int settimeofday(const struct timeval *tv, MBED_UNUSED const struct timezone *tz)
+{
+    _mutex->lock();
+    if (_rtc_init != NULL) {
+        _rtc_init();
+    }
+    if (_rtc_write != NULL) {
+        _rtc_write(tv->tv_sec);
+    }
+    _mutex->unlock();
+
+    return 0;
+}
+
+int gettimeofday(struct timeval *tv, MBED_UNUSED void *tz)
 {
     _mutex->lock();
     if (_rtc_isenabled != NULL) {
@@ -87,31 +101,45 @@ time_t time(time_t *timer)
             set_time(0);
         }
     }
-    
-    time_t t = (time_t)-1;
+
+    time_t t = (time_t) - 1;
     if (_rtc_read != NULL) {
         t = _rtc_read();
     }
 
+    tv->tv_sec  = t;
+    tv->tv_usec = 0;
+
+    _mutex->unlock();
+
+    return 0;
+}
+
+#if defined (__ICCARM__)
+time_t __time32(time_t *timer)
+#else
+time_t time(time_t *timer)
+#endif
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
     if (timer != NULL) {
-        *timer = t;
+        *timer = tv.tv_sec;
     }
-    _mutex->unlock();
-    return t;
+
+    return tv.tv_sec;
 }
 
-void set_time(time_t t) {
-    _mutex->lock();
-    if (_rtc_init != NULL) {
-        _rtc_init();
-    }
-    if (_rtc_write != NULL) {
-        _rtc_write(t);
-    }
-    _mutex->unlock();
+
+void set_time(time_t t)
+{
+    const struct timeval tv = { t, 0 };
+    settimeofday(&tv, NULL);
 }
 
-void attach_rtc(time_t (*read_rtc)(void), void (*write_rtc)(time_t), void (*init_rtc)(void), int (*isenabled_rtc)(void)) {
+void attach_rtc(time_t (*read_rtc)(void), void (*write_rtc)(time_t), void (*init_rtc)(void), int (*isenabled_rtc)(void))
+{
     _mutex->lock();
     _rtc_read = read_rtc;
     _rtc_write = write_rtc;
@@ -119,7 +147,6 @@ void attach_rtc(time_t (*read_rtc)(void), void (*write_rtc)(time_t), void (*init
     _rtc_isenabled = isenabled_rtc;
     _mutex->unlock();
 }
-
 
 
 #ifdef __cplusplus

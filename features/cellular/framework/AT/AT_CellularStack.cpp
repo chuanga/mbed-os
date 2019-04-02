@@ -22,9 +22,9 @@
 using namespace mbed_cellular_util;
 using namespace mbed;
 
-AT_CellularStack::AT_CellularStack(ATHandler &at, int cid, nsapi_ip_stack_t stack_type) : AT_CellularBase(at), _socket(NULL),_socket_count(0),_cid(cid), _stack_type(stack_type)
+AT_CellularStack::AT_CellularStack(ATHandler &at, int cid, nsapi_ip_stack_t stack_type) : AT_CellularBase(at), _socket(NULL), _socket_count(0), _cid(cid), _stack_type(stack_type)
 {
-    memset(_ip,0, PDP_IPV6_SIZE);
+    memset(_ip, 0, PDP_IPV6_SIZE);
 }
 
 AT_CellularStack::~AT_CellularStack()
@@ -41,10 +41,22 @@ AT_CellularStack::~AT_CellularStack()
     _socket = NULL;
 }
 
+int AT_CellularStack::find_socket_index(nsapi_socket_t handle)
+{
+    int max_socket_count = get_max_socket_count();
+    for (int i = 0; i < max_socket_count; i++) {
+        if (_socket[i] == handle) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+
 /** NetworkStack
  */
 
-const char * AT_CellularStack::get_ip_address()
+const char *AT_CellularStack::get_ip_address()
 {
     _at.lock();
 
@@ -58,9 +70,10 @@ const char * AT_CellularStack::get_ip_address()
 
         _at.skip_param();
 
-        int len = _at.read_string(_ip, NSAPI_IPv4_SIZE-1);
+        int len = _at.read_string(_ip, NSAPI_IPv4_SIZE - 1);
         if (len == -1) {
             _ip[0] = '\0';
+            _at.resp_stop();
             _at.unlock();
             // no IPV4 address, return
             return NULL;
@@ -68,7 +81,7 @@ const char * AT_CellularStack::get_ip_address()
 
         // in case stack type is not IPV4 only, try to look also for IPV6 address
         if (_stack_type != IPV4_STACK) {
-            (void)_at.read_string(_ip, PDP_IPV6_SIZE-1);
+            (void)_at.read_string(_ip, PDP_IPV6_SIZE - 1);
         }
     }
 
@@ -94,46 +107,39 @@ nsapi_error_t AT_CellularStack::socket_open(nsapi_socket_t *handle, nsapi_protoc
 
     int max_socket_count = get_max_socket_count();
 
+    _socket_mutex.lock();
+
     if (!_socket) {
         if (socket_stack_init() != NSAPI_ERROR_OK) {
+            _socket_mutex.unlock();
             return NSAPI_ERROR_NO_SOCKET;
         }
 
         _socket = new CellularSocket*[max_socket_count];
-        if (!_socket) {
-            tr_error("No memory to open socket!");
-            return NSAPI_ERROR_NO_SOCKET;
-        }
         _socket_count = max_socket_count;
         for (int i = 0; i < max_socket_count; i++) {
             _socket[i] = 0;
         }
     }
 
-    int index = -1;
-    for (int i = 0; i < max_socket_count; i++) {
-        if (!_socket[i]) {
-            index = i;
-            break;
-        }
-    }
-
+    int index = find_socket_index(0);
     if (index == -1) {
-        tr_error("No socket found!");
+        tr_error("No free sockets!");
+        _socket_mutex.unlock();
         return NSAPI_ERROR_NO_SOCKET;
     }
 
-    tr_info("Socket open index: %d", index);
+    tr_info("Socket %d open", index);
     // create local socket structure, socket on modem is created when app calls sendto/recvfrom
     _socket[index] = new CellularSocket;
-    CellularSocket *psock;
-    psock = _socket[index];
-    memset(psock, 0, sizeof(CellularSocket));
+    CellularSocket *psock = _socket[index];
     SocketAddress addr(0, get_dynamic_ip_port());
     psock->id = index;
     psock->localAddress = addr;
     psock->proto = proto;
     *handle = psock;
+
+    _socket_mutex.unlock();
 
     return NSAPI_ERROR_OK;
 }
@@ -143,30 +149,18 @@ nsapi_error_t AT_CellularStack::socket_close(nsapi_socket_t handle)
     int err = NSAPI_ERROR_DEVICE_ERROR;
 
     struct CellularSocket *socket = (struct CellularSocket *)handle;
-    if (!socket){
+    if (!socket) {
         return err;
     }
     int sock_id = socket->id;
     bool sock_created = socket->created;
-    int max_socket_count = get_max_socket_count();
 
-    int index = -1;
-    for (int i = 0; i < max_socket_count; i++) {
-        if (_socket[i] == socket) {
-            index = i;
-            break;
-        }
-    }
-
-    tr_info("Close socket index: %d id: %d created: %d", index, sock_id, socket->created);
-
+    int index = find_socket_index(handle);
     if (index == -1) {
         tr_error("No socket found to be closed");
         return err;
     }
 
-    _socket[index] = NULL;
-    delete socket;
     err = NSAPI_ERROR_OK;
 
     // Close the socket on the modem if it was created
@@ -174,6 +168,16 @@ nsapi_error_t AT_CellularStack::socket_close(nsapi_socket_t handle)
     if (sock_created) {
         err = socket_close_impl(sock_id);
     }
+
+    if (!err) {
+        tr_info("Socket %d closed", index);
+    } else {
+        tr_info("Socket %d close (id %d, created %d, started %d, error %d)", index, sock_id, socket->created, socket->started, err);
+    }
+
+    _socket[index] = NULL;
+    delete socket;
+
     _at.unlock();
 
     return err;
@@ -187,14 +191,20 @@ nsapi_error_t AT_CellularStack::socket_bind(nsapi_socket_t handle, const SocketA
     }
 
     if (addr) {
-        socket->localAddress.set_addr(addr.get_addr());
-    }
-
-    if (addr.get_port()) {
-        socket->localAddress.set_port(addr.get_port());
+        return NSAPI_ERROR_UNSUPPORTED;
     }
 
     _at.lock();
+
+    uint16_t port = addr.get_port();
+    if (port != socket->localAddress.get_port()) {
+        if (port && (get_socket_index_by_port(port) == -1)) {
+            socket->localAddress.set_port(port);
+        } else {
+            _at.unlock();
+            return NSAPI_ERROR_PARAMETER;
+        }
+    }
 
     if (!socket->created) {
         create_socket_impl(socket);
@@ -241,6 +251,19 @@ nsapi_size_or_error_t AT_CellularStack::socket_sendto(nsapi_socket_t handle, con
         return NSAPI_ERROR_DEVICE_ERROR;
     }
 
+    if (socket->closed && !socket->rx_avail) {
+        tr_info("sendto socket %d closed", socket->id);
+        return NSAPI_ERROR_NO_CONNECTION;
+    }
+
+    if (size == 0) {
+        if (socket->proto == NSAPI_UDP) {
+            return NSAPI_ERROR_UNSUPPORTED;
+        } else if (socket->proto == NSAPI_TCP) {
+            return 0;
+        }
+    }
+
     nsapi_size_or_error_t ret_val = NSAPI_ERROR_OK;
 
     if (!socket->created) {
@@ -250,15 +273,13 @@ nsapi_size_or_error_t AT_CellularStack::socket_sendto(nsapi_socket_t handle, con
 
         _at.unlock();
         if (ret_val != NSAPI_ERROR_OK) {
+            tr_error("Socket %d create %s error %d", find_socket_index(socket), addr.get_ip_address(), ret_val);
             return ret_val;
         }
     }
 
-    unsigned max_packet_size = get_max_packet_size();
-
     /* Check parameters */
-    if (addr.get_ip_version() == NSAPI_UNSPEC ||
-            size > max_packet_size) {
+    if (addr.get_ip_version() == NSAPI_UNSPEC) {
         return NSAPI_ERROR_DEVICE_ERROR;
     }
 
@@ -267,6 +288,12 @@ nsapi_size_or_error_t AT_CellularStack::socket_sendto(nsapi_socket_t handle, con
     ret_val = socket_sendto_impl(socket, addr, data, size);
 
     _at.unlock();
+
+    if (ret_val >= 0) {
+        tr_info("Socket %d sent %d bytes to %s port %d", find_socket_index(socket), ret_val, addr.get_ip_address(), addr.get_port());
+    } else if (ret_val != NSAPI_ERROR_WOULD_BLOCK) {
+        tr_error("Socket %d sendto %s error %d", find_socket_index(socket), addr.get_ip_address(), ret_val);
+    }
 
     return ret_val;
 }
@@ -283,6 +310,11 @@ nsapi_size_or_error_t AT_CellularStack::socket_recvfrom(nsapi_socket_t handle, S
         return NSAPI_ERROR_DEVICE_ERROR;
     }
 
+    if (socket->closed) {
+        tr_info("recvfrom socket %d closed", socket->id);
+        return 0;
+    }
+
     nsapi_size_or_error_t ret_val = NSAPI_ERROR_OK;
 
     if (!socket->created) {
@@ -292,6 +324,7 @@ nsapi_size_or_error_t AT_CellularStack::socket_recvfrom(nsapi_socket_t handle, S
 
         _at.unlock();
         if (ret_val != NSAPI_ERROR_OK) {
+            tr_error("Socket %d create error %d", find_socket_index(socket), ret_val);
             return ret_val;
         }
     }
@@ -301,6 +334,21 @@ nsapi_size_or_error_t AT_CellularStack::socket_recvfrom(nsapi_socket_t handle, S
     ret_val = socket_recvfrom_impl(socket, addr, buffer, size);
 
     _at.unlock();
+
+    if (socket->closed) {
+        tr_info("recvfrom socket %d closed", socket->id);
+        return 0;
+    }
+
+    if (ret_val >= 0) {
+        if (addr) {
+            tr_info("Socket %d recv %d bytes from %s port %d", find_socket_index(socket), ret_val, addr->get_ip_address(), addr->get_port());
+        } else {
+            tr_info("Socket %d recv %d bytes", find_socket_index(socket), ret_val);
+        }
+    } else if (ret_val != NSAPI_ERROR_WOULD_BLOCK) {
+        tr_error("Socket %d recv error %d", find_socket_index(socket), ret_val);
+    }
 
     return ret_val;
 }
@@ -313,4 +361,30 @@ void AT_CellularStack::socket_attach(nsapi_socket_t handle, void (*callback)(voi
     }
     socket->_cb = callback;
     socket->_data = data;
+}
+
+int AT_CellularStack::get_socket_index_by_port(uint16_t port)
+{
+    int max_socket_count = get_max_socket_count();
+    for (int i = 0; i < max_socket_count; i++) {
+        if (_socket[i]->localAddress.get_port() == port) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+AT_CellularStack::CellularSocket *AT_CellularStack::find_socket(int sock_id)
+{
+    CellularSocket *sock = NULL;
+    for (int i = 0; i < _socket_count; i++) {
+        if (_socket[i] && _socket[i]->id == sock_id) {
+            sock = _socket[i];
+            break;
+        }
+    }
+    if (!sock) {
+        tr_error("Socket not found %d", sock_id);
+    }
+    return sock;
 }

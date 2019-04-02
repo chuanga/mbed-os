@@ -15,8 +15,6 @@
  * limitations under the License.
  */
 
-#if MBED_CONF_APP_TEST_WIFI || MBED_CONF_APP_TEST_ETHERNET
-
 #include "unity.h"
 
 #include "EMACMemoryManager.h"
@@ -37,6 +35,18 @@ nsapi_error_t EmacTestNetworkStack::gethostbyname(const char *host, SocketAddres
 nsapi_error_t EmacTestNetworkStack::add_dns_server(const SocketAddress &address)
 {
     return NSAPI_ERROR_OK;
+}
+
+nsapi_error_t EmacTestNetworkStack::call_in(int delay, mbed::Callback<void()> func)
+{
+    // Implemented as empty to save memory
+    return NSAPI_ERROR_DEVICE_ERROR;
+}
+
+EmacTestNetworkStack::call_in_callback_cb_t EmacTestNetworkStack::get_call_in_callback()
+{
+    call_in_callback_cb_t cb(this, &EmacTestNetworkStack::call_in);
+    return cb;
 }
 
 nsapi_error_t EmacTestNetworkStack::socket_open(nsapi_socket_t *handle, nsapi_protocol_t proto)
@@ -192,6 +202,4 @@ OnboardNetworkStack &OnboardNetworkStack::get_default_instance()
 {
     return EmacTestNetworkStack::get_instance();
 }
-#endif
-
 #endif

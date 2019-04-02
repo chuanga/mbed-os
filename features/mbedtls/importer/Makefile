@@ -27,7 +27,8 @@
 #
 
 # Set the mbed TLS release to import (this can/should be edited before import)
-MBED_TLS_RELEASE ?= mbedtls-2.9.0
+MBED_TLS_RELEASE ?= mbedtls-2.17.0
+MBED_TLS_REPO_URL ?= git@github.com:ARMmbed/mbedtls.git
 
 # Translate between mbed TLS namespace and mbed namespace
 TARGET_PREFIX:=../
@@ -36,7 +37,6 @@ TARGET_INC:=$(TARGET_PREFIX)inc
 TARGET_TESTS:=$(TARGET_PREFIX)TESTS
 
 # mbed TLS source directory - hidden from mbed via TARGET_IGNORE
-MBED_TLS_URL:=git@github.com:ARMmbed/mbedtls-restricted.git
 MBED_TLS_DIR:=TARGET_IGNORE/mbedtls
 MBED_TLS_API:=$(MBED_TLS_DIR)/include/mbedtls
 MBED_TLS_GIT_CFG=$(MBED_TLS_DIR)/.git/config
@@ -68,8 +68,9 @@ deploy: rsync
 	# Adjusting the default mbed TLS config file to mbed purposes
 	./adjust-config.sh $(MBED_TLS_DIR)/scripts/config.pl $(TARGET_INC)/mbedtls/config.h
 	#
-	# Copy the trimmed config that does not require entropy source
+	# Copy and adjust the trimmed config that does not require entropy source
 	cp $(MBED_TLS_DIR)/configs/config-no-entropy.h $(TARGET_INC)/mbedtls/.
+	./adjust-no-entropy-config.sh $(MBED_TLS_DIR)/scripts/config.pl $(TARGET_INC)/mbedtls/config-no-entropy.h
 
 deploy-tests: deploy
 	#
@@ -96,7 +97,7 @@ update: $(MBED_TLS_GIT_CFG)  $(MBED_TLS_HA_GIT_CFG)
 
 $(MBED_TLS_GIT_CFG):
 	rm -rf $(MBED_TLS_DIR)
-	git clone $(MBED_TLS_URL) $(MBED_TLS_DIR)
+	git clone $(MBED_TLS_REPO_URL) $(MBED_TLS_DIR)
 
 clean:
 	rm -f $(TARGET_PREFIX)LICENSE
@@ -106,4 +107,3 @@ clean:
 	rm -rf $(TARGET_SRC)
 	rm -rf $(TARGET_INC)
 	rm -rf $(MBED_TLS_DIR)
-

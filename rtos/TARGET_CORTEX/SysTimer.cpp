@@ -21,14 +21,25 @@
  */
 #include "rtos/TARGET_CORTEX/SysTimer.h"
 
-#if DEVICE_LOWPOWERTIMER
+#if DEVICE_LPTICKER
 
 #include "hal/lp_ticker_api.h"
 #include "mbed_critical.h"
+#include "mbed_assert.h"
+#if defined(TARGET_CORTEX_A)
+#include "rtx_core_ca.h"
+#else//Cortex-M
 #include "rtx_core_cm.h"
+#endif
 extern "C" {
 #include "rtx_lib.h"
+#if defined(TARGET_CORTEX_A)
+#include "irq_ctrl.h"
+#endif
 }
+
+#define US_IN_TICK          (1000000 / OS_TICK_FREQ)
+MBED_STATIC_ASSERT(1000000 % OS_TICK_FREQ == 0, "OS_TICK_FREQ must be a divisor of 1000000 for correct tick calculations");
 
 #if (defined(NO_SYSTICK))
 /**
@@ -39,26 +50,30 @@ extern "C" {
 extern "C" IRQn_Type mbed_get_m0_tick_irqn(void);
 #endif
 
+#if defined(TARGET_CORTEX_A)
+extern "C" IRQn_ID_t mbed_get_a9_tick_irqn(void);
+#endif
+
 namespace rtos {
 namespace internal {
 
 SysTimer::SysTimer() :
-        TimerEvent(get_lp_ticker_data()), _start_time(0), _tick(0)
+    TimerEvent(get_lp_ticker_data()), _time_us(0), _tick(0)
 {
-    _start_time = ticker_read_us(_ticker_data);
+    _time_us = ticker_read_us(_ticker_data);
     _suspend_time_passed = true;
     _suspended = false;
 }
 
 SysTimer::SysTimer(const ticker_data_t *data) :
-        TimerEvent(data), _start_time(0), _tick(0)
+    TimerEvent(data), _time_us(0), _tick(0)
 {
-    _start_time = ticker_read_us(_ticker_data);
+    _time_us = ticker_read_us(_ticker_data);
 }
 
 void SysTimer::setup_irq()
 {
-#if (defined(NO_SYSTICK))
+#if (defined(NO_SYSTICK) && !defined (TARGET_CORTEX_A))
     NVIC_SetVector(mbed_get_m0_tick_irqn(), (uint32_t)SysTick_Handler);
     NVIC_SetPriority(mbed_get_m0_tick_irqn(), 0xFF); /* RTOS requires lowest priority */
     NVIC_EnableIRQ(mbed_get_m0_tick_irqn());
@@ -72,13 +87,13 @@ void SysTimer::setup_irq()
 
 void SysTimer::suspend(uint32_t ticks)
 {
-    core_util_critical_section_enter();
+    // Remove ensures serialized access to SysTimer by stopping timer interrupt
+    remove();
 
-    schedule_tick(ticks);
     _suspend_time_passed = false;
     _suspended = true;
 
-    core_util_critical_section_exit();
+    schedule_tick(ticks);
 }
 
 bool SysTimer::suspend_time_passed()
@@ -88,24 +103,23 @@ bool SysTimer::suspend_time_passed()
 
 uint32_t SysTimer::resume()
 {
-    core_util_critical_section_enter();
+    // Remove ensures serialized access to SysTimer by stopping timer interrupt
+    remove();
 
     _suspended = false;
     _suspend_time_passed = true;
-    remove();
 
-    uint64_t new_tick = (ticker_read_us(_ticker_data) - _start_time) * OS_TICK_FREQ / 1000000;
-    if (new_tick > _tick) {
+    uint64_t elapsed_ticks = (ticker_read_us(_ticker_data) - _time_us) / US_IN_TICK;
+    if (elapsed_ticks > 0) {
         // Don't update to the current tick. Instead, update to the
         // previous tick and let the SysTick handler increment it
         // to the current value. This allows scheduling restart
         // successfully after the OS is resumed.
-        new_tick--;
+        elapsed_ticks--;
     }
-    uint32_t elapsed_ticks = new_tick - _tick;
-    _tick = new_tick;
+    _time_us += elapsed_ticks * US_IN_TICK;
+    _tick += elapsed_ticks;
 
-    core_util_critical_section_exit();
     return elapsed_ticks;
 }
 
@@ -113,18 +127,16 @@ void SysTimer::schedule_tick(uint32_t delta)
 {
     core_util_critical_section_enter();
 
-    insert_absolute(_start_time + (_tick + delta) * 1000000ULL / OS_TICK_FREQ);
+    insert_absolute(_time_us + delta * US_IN_TICK);
 
     core_util_critical_section_exit();
 }
 
 void SysTimer::cancel_tick()
 {
-    core_util_critical_section_enter();
+    // Underlying call is interrupt safe
 
     remove();
-
-    core_util_critical_section_exit();
 }
 
 uint32_t SysTimer::get_tick()
@@ -134,6 +146,8 @@ uint32_t SysTimer::get_tick()
 
 us_timestamp_t SysTimer::get_time()
 {
+    // Underlying call is interrupt safe
+
     return ticker_read_us(_ticker_data);
 }
 
@@ -147,6 +161,8 @@ void SysTimer::_set_irq_pending()
 
 #if (defined(NO_SYSTICK))
     NVIC_SetPendingIRQ(mbed_get_m0_tick_irqn());
+#elif (TARGET_CORTEX_A)
+    IRQ_SetPending(mbed_get_a9_tick_irqn());
 #else
     SCB->ICSR = SCB_ICSR_PENDSTSET_Msk;
 #endif
@@ -157,6 +173,7 @@ void SysTimer::_increment_tick()
     // Protected function synchronized externally
 
     _tick++;
+    _time_us += US_IN_TICK;
 }
 
 void SysTimer::handler()
@@ -168,6 +185,7 @@ void SysTimer::handler()
     } else {
         _set_irq_pending();
         _increment_tick();
+        schedule_tick();
     }
 
     core_util_critical_section_exit();

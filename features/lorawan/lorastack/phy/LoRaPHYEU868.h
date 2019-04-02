@@ -32,6 +32,8 @@
 #ifndef MBED_OS_LORAPHY_EU868_H_
 #define MBED_OS_LORAPHY_EU868_H_
 
+#if !(DOXYGEN_ONLY)
+
 #include "LoRaPHY.h"
 
 /*!
@@ -54,7 +56,7 @@
 class LoRaPHYEU868 : public LoRaPHY {
 
 public:
-    LoRaPHYEU868(LoRaWANTimeHandler &lora_time);
+    LoRaPHYEU868();
     virtual ~LoRaPHYEU868();
 
 private:
@@ -79,4 +81,5 @@ private:
     uint16_t default_channel_mask[EU868_CHANNEL_MASK_SIZE];
 };
 
+#endif /* DOXYGEN_ONLY*/
 #endif /* MBED_OS_LORAPHY_EU868_H_ */

@@ -3,6 +3,7 @@
 /** @{*/
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@
 #define MBED_I2C_API_H
 
 #include "device.h"
+#include "pinmap.h"
 #include "hal/buffer.h"
 
 #if DEVICE_I2C_ASYNCH
@@ -58,8 +60,8 @@ typedef struct i2c_s i2c_t;
 #endif
 
 enum {
-  I2C_ERROR_NO_SLAVE = -1,
-  I2C_ERROR_BUS_BUSY = -2
+    I2C_ERROR_NO_SLAVE = -1,
+    I2C_ERROR_BUS_BUSY = -2
 };
 
 #ifdef __cplusplus
@@ -73,7 +75,7 @@ extern "C" {
 
 /** Initialize the I2C peripheral. It sets the default parameters for I2C
  *  peripheral, and configures its specifieds pins.
- *  
+ *
  *  @param obj  The I2C object
  *  @param sda  The sda pin
  *  @param scl  The scl pin
@@ -117,7 +119,7 @@ int i2c_read(i2c_t *obj, int address, char *data, int length, int stop);
  *  @param data    The buffer for sending
  *  @param length  Number of bytes to write
  *  @param stop    Stop to be generated after the transfer is done
- *  @return 
+ *  @return
  *      zero or non-zero - Number of written bytes
  *      negative - I2C_ERROR_XXX status
  */
@@ -144,6 +146,42 @@ int i2c_byte_read(i2c_t *obj, int last);
  *  @return 0 if NAK was received, 1 if ACK was received, 2 for timeout.
  */
 int i2c_byte_write(i2c_t *obj, int data);
+
+/** Get the pins that support I2C SDA
+ *
+ * Return a PinMap array of pins that support I2C SDA in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *i2c_master_sda_pinmap(void);
+
+/** Get the pins that support I2C SCL
+ *
+ * Return a PinMap array of pins that support I2C SCL in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *i2c_master_scl_pinmap(void);
+
+/** Get the pins that support I2C SDA
+ *
+ * Return a PinMap array of pins that support I2C SDA in
+ * slave mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *i2c_slave_sda_pinmap(void);
+
+/** Get the pins that support I2C SCL
+ *
+ * Return a PinMap array of pins that support I2C SCL in
+ * slave mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *i2c_slave_scl_pinmap(void);
 
 /**@}*/
 

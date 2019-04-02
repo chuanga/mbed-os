@@ -32,4 +32,11 @@
 //#define USE_EXTAL_CLK
 //#define USE_RTCX3_CLK
 
+#define RENESAS_RZ_A1_P0_CLK   CM0_RENESAS_RZ_A1_P0_CLK
+
+/* Clock Mode 0 */
+/* CLKIN is between 10MHz and 13.33MHz */
+/* Divider 1 uses 1/1 ratio, PLL x30 is ON */
+#define RENESAS_RZ_A1_SYS_CLK  (CM0_RENESAS_RZ_A1_CLKIN * 30U)
+
 #endif

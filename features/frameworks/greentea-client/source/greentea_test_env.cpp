@@ -18,7 +18,6 @@
 #include <ctype.h>
 #include <cstdio>
 #include <string.h>
-#include "mbed.h"
 #include "greentea-client/test_env.h"
 #include "greentea-client/greentea_serial.h"
 #include "greentea-client/greentea_metrics.h"
@@ -95,8 +94,10 @@ void _GREENTEA_SETUP_COMMON(const int timeout, const char *host_test_name, char 
  *           This function is blocking.
  */
 extern "C" void GREENTEA_SETUP(const int timeout, const char *host_test_name) {
+#if ! defined(NO_GREENTEA)
     char _value[GREENTEA_UUID_LENGTH] = {0};
     _GREENTEA_SETUP_COMMON(timeout, host_test_name, _value, GREENTEA_UUID_LENGTH);
+#endif
 }
 
 /** \brief Handshake with host and send setup data (timeout and host test name). Allows you to preserve sync UUID.
@@ -159,8 +160,8 @@ extern bool coverage_report;
  *
  *        Generates preamble of message sent to notify host about code coverage data dump.
  *
- *        This function is used by mbedOS software
- *        (see: mbed-drivers/source/retarget.cpp file) to generate code coverage
+ *        This function is used by Mbed OS
+ *        (see: mbed-os/platform/mbed_retarget.cpp) to generate code coverage
  *        messages to host. When code coverage feature is turned on slave will
  *        print-out code coverage data in form of key-value protocol.
  *        Message with code coverage data will contain message name, path to code
@@ -177,8 +178,8 @@ void greentea_notify_coverage_start(const char *path) {
 /**
  *  \brief Sufix for code coverage message to master (closing statement)
  *
- *         This function is used by mbedOS software
- *         (see: mbed-drivers/source/retarget.cpp file) to generate code coverage
+ *         This function is used by Mbed OS
+ *         (see: mbed-os/platform/mbed_retarget.cpp) to generate code coverage
  *         messages to host. When code coverage feature is turned on slave will
  *         print-out code coverage data in form of key-value protocol.
  *         Message with code coverage data will contain message name, path to code

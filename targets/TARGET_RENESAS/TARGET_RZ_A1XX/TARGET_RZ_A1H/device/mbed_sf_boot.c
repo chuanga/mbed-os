@@ -26,15 +26,24 @@
 * $Date::                           $
 * @brief        RZ_A1 serial flash boot loader
 ******************************************************************************/
+#if !defined(APPLICATION_ADDR)
+    #define APPLICATION_ADDR    0x18000000
+#endif
+
+#if (APPLICATION_ADDR != 0x18000000)
+const char  * boot_loader = (char  *)0x18000000;
+
+#else /* (APPLICATION_ADDR == 0x18000000) */
+
 #if defined  (__CC_ARM)
 #pragma arm section rodata = "BOOT_LOADER"
 const char boot_loader[]  __attribute__((used)) =
-
+#elif (defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050))
+const char boot_loader[]  __attribute__ ((section("BOOT_LOADER"), used)) =
 #elif defined (__ICCARM__)
 __root const char boot_loader[] @ 0x18000000 =
 #else
 const char boot_loader[]  __attribute__ ((section(".boot_loader"), used)) =
-
 #endif
 {
     0x18,0xF0,0x9F,0xE5,0x18,0xF0,0x9F,0xE5,0x18,0xF0,0x9F,0xE5,0x18,0xF0,0x9F,0xE5,
@@ -826,3 +835,4 @@ const char boot_loader[]  __attribute__ ((section(".boot_loader"), used)) =
 #pragma arm section
 #endif
 
+#endif /* APPLICATION_ADDR */

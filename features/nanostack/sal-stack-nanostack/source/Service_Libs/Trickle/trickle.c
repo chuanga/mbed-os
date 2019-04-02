@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +36,7 @@ void trickle_begin_interval(trickle_t *t)
     if (t->I > 2) { //Take random only when t->I is bigger than 2 otherwise result will be 1
         t->t = randLIB_get_random_in_range(t->I / 2, t->I - 1);
     } else {
-        t->t= 1;
+        t->t = 1;
     }
     t->now = 0;
 }

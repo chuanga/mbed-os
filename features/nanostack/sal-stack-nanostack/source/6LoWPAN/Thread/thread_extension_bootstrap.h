@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Arm Limited and affiliates.
+ * Copyright (c) 2017-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,6 +45,8 @@ extern "C" {
 #define thread_extension_bootstrap_thread_name_length_get(cur) (0)
 #define thread_extension_bootstrap_thread_name_ptr_get(cur) (NULL)
 #define thread_extension_bootstrap_network_certificate_enable(cur, coap_service_id) (NULL)
+#define thread_extension_bootstrap_reenrollment_start(cur, service_id, pbbr_addr) (-1)
+#define thread_extension_bootstrap_network_reattach(interface_id, timeout) (-1)
 
 #ifdef __cplusplus
 }

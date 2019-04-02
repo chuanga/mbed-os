@@ -22,25 +22,11 @@
 #include "unity.h"
 #include "utest.h"
 
-#if MBED_CONF_APP_TEST_WIFI || MBED_CONF_APP_TEST_ETHERNET
-
-#include "EthernetInterface.h"
+#include "NetworkInterface.h"
 #include "EMAC.h"
 #include "EMACMemoryManager.h"
 #include "emac_TestMemoryManager.h"
 #include "emac_TestNetworkStack.h"
-
-#if MBED_CONF_APP_TEST_WIFI
-
-#ifdef TARGET_UBLOX_EVK_ODIN_W2
-#include "OdinWiFiInterface.h"
-#endif
-#ifdef TARGET_REALTEK_RTL8195AM
-#include "RTWInterface.h"
-#endif
-
-#endif
-
 #include "emac_initialize.h"
 #include "emac_tests.h"
 #include "emac_util.h"
@@ -54,27 +40,16 @@ void test_emac_initialize()
 {
     worker_loop_init();
 
-#if MBED_CONF_APP_TEST_ETHERNET
+    static NetworkInterface *network_interface = NetworkInterface::get_default_instance();
 
-    static EthernetInterface *network_interface = new EthernetInterface;
-
-#elif MBED_CONF_APP_TEST_WIFI
-
-    // Add wifi classes here
-#ifdef TARGET_UBLOX_EVK_ODIN_W2
-    static WiFiInterface *network_interface = new OdinWiFiInterface;
-#elif TARGET_REALTEK_RTL8195AM
-    static WiFiInterface *network_interface = new RTWInterface;
-#else
-    static WiFiInterface *network_interface = new WiFiInterface;
-#endif
-
+#define WIFI 2
+#if MBED_CONF_TARGET_NETWORK_DEFAULT_INTERFACE_TYPE == WIFI
 #if MBED_CONF_APP_WIFI_SCAN
     WiFiAccessPoint ap[30];
 
-    int size = network_interface->scan(ap, 30);
+    int size = network_interface->wifiInterface()->scan(ap, 30);
 
-    for (int i=0; i<size; i++) {
+    for (int i = 0; i < size; i++) {
         const char *ssid = ap[i].get_ssid();
         nsapi_security_t security = ap[i].get_security();
         int8_t rssi = ap[i].get_rssi();
@@ -87,13 +62,10 @@ void test_emac_initialize()
         printf("ch %i\r\n\r\n", ch);
     }
 #endif
-
-    network_interface->set_credentials(MBED_CONF_APP_WIFI_SSID, MBED_CONF_APP_WIFI_PASSWORD, MBED_CONF_APP_WIFI_SECURITY);
-
 #endif
 
     // Power up the interface and emac driver
-    network_interface->connect();
+    TEST_ASSERT_EQUAL_INT(NSAPI_ERROR_OK, network_interface->connect());
 
     worker_loop_link_up_wait();
 }
@@ -133,7 +105,7 @@ bool emac_if_init(EMAC *emac)
     mbed_mac_address(reinterpret_cast<char *>(&eth_mac_addr[0]));
     emac->get_hwaddr(eth_mac_addr);
     emac->set_hwaddr(eth_mac_addr);
-    printf("emac hwaddr %x:%x:%x:%x:%x:%x\r\n\r\n", eth_mac_addr[0],eth_mac_addr[1],eth_mac_addr[2],eth_mac_addr[3],eth_mac_addr[4],eth_mac_addr[5]);
+    printf("emac hwaddr %x:%x:%x:%x:%x:%x\r\n\r\n", eth_mac_addr[0], eth_mac_addr[1], eth_mac_addr[2], eth_mac_addr[3], eth_mac_addr[4], eth_mac_addr[5]);
 
     int mtu_size = emac->get_mtu_size();
     printf("emac mtu %i\r\n\r\n", mtu_size);
@@ -145,5 +117,3 @@ bool emac_if_init(EMAC *emac)
 
     return true;
 }
-
-#endif

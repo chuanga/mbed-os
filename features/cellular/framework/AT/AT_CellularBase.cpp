@@ -16,15 +16,15 @@
  */
 
 #include "AT_CellularBase.h"
+#include "CellularLog.h"
 
 using namespace mbed;
 
-AT_CellularBase::AT_CellularBase(ATHandler& at) : _at(at)
+AT_CellularBase::AT_CellularBase(ATHandler &at) : _at(at)
 {
-
 }
 
-ATHandler& AT_CellularBase::get_at_handler()
+ATHandler &AT_CellularBase::get_at_handler()
 {
     return _at;
 }
@@ -34,3 +34,19 @@ device_err_t AT_CellularBase::get_device_error() const
     return _at.get_last_device_error();
 }
 
+const intptr_t *AT_CellularBase::_property_array;
+
+void AT_CellularBase::set_cellular_properties(const intptr_t *property_array)
+{
+    if (!property_array) {
+        tr_warning("trying to set an empty cellular property array");
+        return;
+    }
+
+    _property_array = property_array;
+}
+
+intptr_t AT_CellularBase::get_property(CellularProperty key)
+{
+    return _property_array[key];
+}

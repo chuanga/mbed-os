@@ -16,7 +16,7 @@
 #include "mbed_assert.h"
 #include "analogin_api.h"
 
-#if DEVICE_ANALOGIN
+#if DEVICE_ANALOGIN && !defined(NXP_LPADC)
 
 #include "cmsis.h"
 #include "pinmap.h"
@@ -30,9 +30,13 @@ static ADC_Type *const adc_addrs[] = ADC_BASE_PTRS;
 extern void ADC_ClockPower_Configuration(void);
 
 #define MAX_FADC 6000000
+#define MAX_ADC_CLOCK 80000000
 
 void analogin_init(analogin_t *obj, PinName pin)
 {
+    uint32_t clkval;
+    uint32_t clkdiv = 1;
+
     obj->adc = (ADCName)pinmap_peripheral(pin, PinMap_ADC);
     MBED_ASSERT(obj->adc != (ADCName)NC);
 
@@ -42,11 +46,13 @@ void analogin_init(analogin_t *obj, PinName pin)
     uint32_t pin_number = pin & 0x1F;
     uint8_t port_number = pin / 32;
 
-    /* Clear the DIGIMODE bit */
-    reg = IOCON->PIO[port_number][pin_number] & ~IOCON_PIO_DIGIMODE_MASK;
-    IOCON->PIO[port_number][pin_number] = reg;
-
     ADC_ClockPower_Configuration();
+
+    /* Ensure the ADC clock derived from the system clock is less than 80MHz */
+    clkval = CLOCK_GetFreq(kCLOCK_CoreSysClk);
+    while ((clkval / clkdiv) > MAX_ADC_CLOCK) {
+        clkdiv++;
+    }
 
     /* Calibration after power up. */
     if (!(ADC_DoSelfCalibration(adc_addrs[instance]))) {
@@ -55,10 +61,14 @@ void analogin_init(analogin_t *obj, PinName pin)
     }
 
     ADC_GetDefaultConfig(&adc_config);
-    adc_config.clockDividerNumber = 1;
+    adc_config.clockDividerNumber = clkdiv;
 
     ADC_Init(adc_addrs[instance], &adc_config);
     pinmap_pinout(pin, PinMap_ADC);
+
+    /* Clear the DIGIMODE bit */
+    reg = IOCON->PIO[port_number][pin_number] & ~IOCON_PIO_DIGIMODE_MASK;
+    IOCON->PIO[port_number][pin_number] = reg;
 }
 
 uint16_t analogin_read_u16(analogin_t *obj)
@@ -70,7 +80,7 @@ uint16_t analogin_read_u16(analogin_t *obj)
 
     adcConvSeqConfigStruct.channelMask = (1U << channel);
     adcConvSeqConfigStruct.triggerMask = 0U;
-    adcConvSeqConfigStruct.triggerPolarity = kADC_TriggerPolarityNegativeEdge;
+    adcConvSeqConfigStruct.triggerPolarity = kADC_TriggerPolarityPositiveEdge;
     adcConvSeqConfigStruct.enableSingleStep = false;
     adcConvSeqConfigStruct.enableSyncBypass = false;
     adcConvSeqConfigStruct.interruptMode = kADC_InterruptForEachSequence;
@@ -90,6 +100,11 @@ float analogin_read(analogin_t *obj)
 {
     uint16_t value = analogin_read_u16(obj);
     return (float)value * (1.0f / (float)0xFFFF);
+}
+
+const PinMap *analogin_pinmap()
+{
+    return PinMap_ADC;
 }
 
 #endif

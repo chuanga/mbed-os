@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,7 @@
 #include "eventOS_callback_timer.h"
 #include "ns_trace.h"
 #include "nsdynmemLIB.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "NWK_INTERFACE/Include/protocol_timer.h"
 #include "platform/arm_hal_interrupt.h"
@@ -64,6 +64,11 @@
 #include "6LoWPAN/Thread/thread_bootstrap.h"
 #include "6LoWPAN/Thread/thread_routing.h"
 #include "6LoWPAN/Thread/thread_management_internal.h"
+#include "6LoWPAN/ws/ws_bootstrap.h"
+#include "6LoWPAN/ws/ws_common.h"
+#ifdef HAVE_WS
+#include "6LoWPAN/ws/ws_pae_controller.h"
+#endif
 #include "ipv6_stack/protocol_ipv6.h"
 #include "Service_Libs/whiteboard/whiteboard.h"
 
@@ -242,8 +247,14 @@ void core_timer_event_handle(uint16_t ticksUpdate)
                 if (cur->lowpan_info & INTERFACE_NWK_ACTIVE) {
                     if (thread_info(cur)) {
                         thread_seconds_timer(cur, seconds);
+                    } else if (ws_info(cur)) {
+                        ws_common_seconds_timer(cur, seconds);
                     } else if (cur->lowpan_info & INTERFACE_NWK_ROUTER_DEVICE) {
                         beacon_join_priority_update(cur->id);
+                    }
+
+                    if (cur->mac_parameters) {
+                        mac_neighbor_table_neighbor_timeout_update(mac_neighbor_info(cur), seconds);
                     }
 
                     if (cur->nwk_wpan_nvm_api) {
@@ -301,9 +312,11 @@ void core_timer_event_handle(uint16_t ticksUpdate)
         if (cur->nwk_id == IF_6LoWPAN) {
             if (cur->lowpan_info & INTERFACE_NWK_ACTIVE) {
                 nwk_bootsrap_timer(cur);
-                nd_object_timer(cur,ticksUpdate);
+                nd_object_timer(cur, ticksUpdate);
                 if (thread_info(cur)) {
                     thread_timer(cur, ticksUpdate);
+                } else if (ws_info(cur)) {
+                    ws_common_fast_timer(cur, ticksUpdate);
                 }
                 lowpan_context_timer(&cur->lowpan_contexts, ticksUpdate);
             }
@@ -325,6 +338,9 @@ void core_timer_event_handle(uint16_t ticksUpdate)
     rpl_control_fast_timer(ticksUpdate);
     icmpv6_radv_timer(ticksUpdate);
     protocol_core_security_tick_update(ticksUpdate);
+#ifdef HAVE_WS
+    ws_pae_controller_timer(ticksUpdate);
+#endif
     platform_enter_critical();
     protocol_core_timer_info.core_timer_event = false;
     platform_exit_critical();
@@ -383,6 +399,11 @@ void protocol_core_interface_info_reset(protocol_interface_info_entry_t *entry)
         ns_list_foreach_safe(if_address_entry_t, addr, &entry->ip_addresses) {
             addr_delete_entry(entry, addr);
         }
+#ifdef MULTICAST_FORWARDING
+        ns_list_foreach_safe(if_group_fwd_entry_t, group, &entry->ip_groups_fwd) {
+            addr_multicast_fwd_remove(entry, group->group);
+        }
+#endif
 #ifdef HAVE_RPL
         /* This is done after address deletion, so RPL can act on them */
         rpl_control_remove_domain_from_interface(entry);
@@ -416,14 +437,14 @@ uint32_t protocol_stack_interface_set_reachable_time(protocol_interface_info_ent
 }
 
 
-static void protocol_core_base_init(protocol_interface_info_entry_t *entry,nwk_interface_id nwk_id)
+static void protocol_core_base_init(protocol_interface_info_entry_t *entry, nwk_interface_id nwk_id)
 {
     entry->nwk_id = nwk_id;
     switch (nwk_id) {
         case IF_IPV6:
             entry->bootsrap_mode = ARM_NWK_BOOTSRAP_MODE_ETHERNET_ROUTER;
             break;
-       default:
+        default:
             entry->bootsrap_mode = ARM_NWK_BOOTSRAP_MODE_6LoWPAN_ROUTER;
             break;
     }
@@ -523,7 +544,7 @@ static void lowpan_security_parameters_deallocate(protocol_interface_info_entry_
 
 }
 
-static protocol_interface_info_entry_t * protocol_interface_class_allocate(nwk_interface_id nwk_id)
+static protocol_interface_info_entry_t *protocol_interface_class_allocate(nwk_interface_id nwk_id)
 {
     protocol_interface_info_entry_t *entry = ns_dyn_mem_alloc(sizeof(protocol_interface_info_entry_t));
     if (entry) {
@@ -534,14 +555,14 @@ static protocol_interface_info_entry_t * protocol_interface_class_allocate(nwk_i
         entry->zone_index[IPV6_SCOPE_INTERFACE_LOCAL] = id;
         entry->zone_index[IPV6_SCOPE_LINK_LOCAL] = id;
         entry->zone_index[IPV6_SCOPE_REALM_LOCAL] = id;
-        protocol_core_base_init(entry,nwk_id);
+        protocol_core_base_init(entry, nwk_id);
     }
     return entry;
 }
 
 static protocol_interface_info_entry_t *protocol_core_interface_6lowpan_entry_get_with_mac(mac_api_t *api)
 {
-    if( !api ){
+    if (!api) {
         return NULL;
     }
     protocol_interface_info_entry_t *entry = protocol_interface_class_allocate(IF_6LoWPAN);
@@ -580,10 +601,10 @@ static protocol_interface_info_entry_t *protocol_core_interface_6lowpan_entry_ge
     entry->beacon_cb = beacon_received;
 
     entry->mac_api = api;
-    int8_t err = entry->mac_api->mac_initialize( entry->mac_api, &mcps_data_confirm_handler, &mcps_data_indication_handler,
-                                                 &mcps_purge_confirm_handler, &mlme_confirm_handler, &mlme_indication_handler,
-                                                 entry->id );
-    if( err < 0 ){
+    int8_t err = entry->mac_api->mac_initialize(entry->mac_api, &mcps_data_confirm_handler, &mcps_data_indication_handler,
+                                                &mcps_purge_confirm_handler, &mlme_confirm_handler, &mlme_indication_handler,
+                                                entry->id);
+    if (err < 0) {
         goto interface_failure;
     }
 
@@ -645,7 +666,7 @@ static protocol_interface_info_entry_t *protocol_core_interface_ethernet_entry_g
 
 static void protocol_ethernet_mac_set(protocol_interface_info_entry_t *cur, const uint8_t *mac)
 {
-    if( !cur || !cur->eth_mac_api ) {
+    if (!cur || !cur->eth_mac_api) {
         return;
     }
 
@@ -678,7 +699,7 @@ static void protocol_ethernet_mac_set(protocol_interface_info_entry_t *cur, cons
 }
 #endif
 
-static void protocol_stack_interface_iid_eui64_generate(protocol_interface_info_entry_t *cur , const uint8_t *mac)
+static void protocol_stack_interface_iid_eui64_generate(protocol_interface_info_entry_t *cur, const uint8_t *mac)
 {
     if (cur->nwk_id == IF_6LoWPAN) {
         protocol_6lowpan_mac_set(cur, mac);
@@ -759,6 +780,20 @@ protocol_interface_info_entry_t *protocol_stack_interface_info_get_by_rpl_domain
     return NULL;
 }
 
+protocol_interface_info_entry_t *protocol_stack_interface_info_get_by_fhss_api(const struct fhss_api *fhss_api)
+{
+#ifdef HAVE_WS
+    ns_list_foreach(protocol_interface_info_entry_t, cur, &protocol_interface_info_list) {
+        if (cur->ws_info && (cur->ws_info->fhss_api == fhss_api)) {
+            return cur;
+        }
+    }
+#else
+    (void)fhss_api;
+#endif //HAVE_WS
+    return NULL;
+}
+
 protocol_interface_info_entry_t *protocol_stack_interface_sleep_possibility(void)
 {
     ns_list_foreach(protocol_interface_info_entry_t, cur, &protocol_interface_info_list) {
@@ -808,9 +843,9 @@ static int8_t net_interface_get_free_id(void)
          * ensure selected ID is not in use for any of those scopes */
         ns_list_foreach(protocol_interface_info_entry_t, cur, &protocol_interface_info_list) {
             if (cur->id == (int8_t) id ||
-                cur->zone_index[IPV6_SCOPE_INTERFACE_LOCAL] == id ||
-                cur->zone_index[IPV6_SCOPE_LINK_LOCAL] == id ||
-                cur->zone_index[IPV6_SCOPE_REALM_LOCAL] == id) {
+                    cur->zone_index[IPV6_SCOPE_INTERFACE_LOCAL] == id ||
+                    cur->zone_index[IPV6_SCOPE_LINK_LOCAL] == id ||
+                    cur->zone_index[IPV6_SCOPE_REALM_LOCAL] == id) {
                 in_use = true;
                 break;
             }
@@ -825,7 +860,7 @@ static int8_t net_interface_get_free_id(void)
 
 protocol_interface_info_entry_t *protocol_stack_interface_generate_ethernet(eth_mac_api_t *api)
 {
-    if( !api ){
+    if (!api) {
         return NULL;
     }
     protocol_interface_info_entry_t *new_entry = NULL;
@@ -846,8 +881,8 @@ protocol_interface_info_entry_t *protocol_stack_interface_generate_ethernet(eth_
             ipv6_neighbour_cache_init(&new_entry->ipv6_neighbour_cache, new_entry->id);
             addr_max_slaac_entries_set(new_entry, 16);
             uint8_t mac[6];
-            int8_t error = api->mac48_get( api, mac );
-            if(error){
+            int8_t error = api->mac48_get(api, mac);
+            if (error) {
                 tr_error("mac_ext_mac64_address_get failed: %d", error);
                 ns_dyn_mem_free(new_entry);
                 return NULL;
@@ -866,7 +901,7 @@ protocol_interface_info_entry_t *protocol_stack_interface_generate_ethernet(eth_
 
 protocol_interface_info_entry_t *protocol_stack_interface_generate_lowpan(mac_api_t *api)
 {
-    if( !api ){
+    if (!api) {
         return NULL;
     }
     ns_list_foreach(protocol_interface_info_entry_t, cur, &protocol_interface_info_list) {
@@ -884,8 +919,8 @@ protocol_interface_info_entry_t *protocol_stack_interface_generate_lowpan(mac_ap
         ipv6_neighbour_cache_init(&new_entry->ipv6_neighbour_cache, new_entry->id);
 
         uint8_t mac[8];
-        int8_t error = api->mac64_get( api, MAC_EXTENDED_READ_ONLY, mac );
-        if(error){
+        int8_t error = api->mac64_get(api, MAC_EXTENDED_READ_ONLY, mac);
+        if (error) {
             tr_error("mac_ext_mac64_address_get failed: %d", error);
             ns_dyn_mem_free(new_entry);
             return NULL;
@@ -926,11 +961,11 @@ void protocol_push(buffer_t *buf)
     }
 
     arm_event_s event = {
-            .receiver = protocol_root_tasklet_ID,
-            .sender = 0,
-            .event_type = ARM_IN_INTERFACE_PROTOCOL_HANDLE,
-            .data_ptr = buf,
-            .priority = ARM_LIB_LOW_PRIORITY_EVENT,
+        .receiver = protocol_root_tasklet_ID,
+        .sender = 0,
+        .event_type = ARM_IN_INTERFACE_PROTOCOL_HANDLE,
+        .data_ptr = buf,
+        .priority = ARM_LIB_LOW_PRIORITY_EVENT,
     };
 
     if (eventOS_event_send(&event) == 0) {
@@ -1008,7 +1043,7 @@ void nwk_bootsrap_state_update(arm_nwk_interface_status_type_e posted_event, pro
 
     if (posted_event == ARM_NWK_BOOTSTRAP_READY) {
 
-            switch (cur->bootsrap_mode) {
+        switch (cur->bootsrap_mode) {
 
             case ARM_NWK_BOOTSRAP_MODE_6LoWPAN_RF_ACCESPOINT:
             case ARM_NWK_BOOTSRAP_MODE_6LoWPAN_RF_SNIFFER:
@@ -1059,6 +1094,8 @@ void net_bootsrap_cb_run(uint8_t event)
             //eventOS_scheduler_set_active_tasklet(protocol_read_tasklet_id());
             if (thread_info(cur)) {
                 thread_bootstrap_state_machine(cur);
+            } else if (ws_info(cur)) {
+                ws_bootstrap_state_machine(cur);
             } else {
                 protocol_6lowpan_bootstrap(cur);
             }

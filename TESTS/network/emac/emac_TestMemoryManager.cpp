@@ -15,8 +15,6 @@
  * limitations under the License.
  */
 
-#if MBED_CONF_APP_TEST_WIFI || MBED_CONF_APP_TEST_ETHERNET
-
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -26,6 +24,11 @@
 #include "unity.h"
 
 #include "rtos/Mutex.h"
+
+extern "C" {
+#include "arm_hal_interrupt_private.h"
+}
+#include "nsdynmemLIB.h"
 
 #include "EMACMemoryManager.h"
 #include "emac_TestMemoryManager.h"
@@ -43,12 +46,57 @@
 
 char s_trace_buffer[100] = MEM_MNGR_TRACE;
 
+/* For LPC boards define the heap memory bank ourselves to give us section placement
+   control */
+#ifndef ETHMEM_SECTION
+#if defined(TARGET_LPC4088) || defined(TARGET_LPC4088_DM)
+#  if defined (__ICCARM__)
+#     define ETHMEM_SECTION
+#  elif defined(TOOLCHAIN_GCC_CR)
+#     define ETHMEM_SECTION __attribute__((section(".data.$RamPeriph32")))
+#  else
+#     define ETHMEM_SECTION __attribute__((section("AHBSRAM1"),aligned))
+#  endif
+#elif defined(TARGET_LPC1768) || defined(TARGET_LPC1769)
+#  if defined (__ICCARM__)
+#     define ETHMEM_SECTION
+#  elif defined(TOOLCHAIN_GCC_CR)
+#     define ETHMEM_SECTION __attribute__((section(".data.$RamPeriph32")))
+#  else
+#     define ETHMEM_SECTION __attribute__((section("AHBSRAM0"),aligned))
+#  endif
+#endif
+#endif
+
+#ifdef ETHMEM_SECTION
+// Use nanostack libservice dynamic memory library
+#define EMAC_HEAP_SIZE 16300
+
+#if defined (__ICCARM__)
+#pragma location = ".ethusbram"
+#endif
+ETHMEM_SECTION static unsigned char ns_heap[EMAC_HEAP_SIZE];
+
+void emac_heap_error_handler(heap_fail_t event)
+{
+    MBED_ASSERT(0);
+}
+#endif
+
 EmacTestMemoryManager::EmacTestMemoryManager()
     : m_mem_mutex(),
       m_mem_buffers(),
       m_alloc_unit(BUF_POOL_SIZE),
       m_memory_available(true)
 {
+#ifdef ETHMEM_SECTION
+    static bool ns_heap_init = false;
+    if (!ns_heap_init) {
+        platform_critical_init(); // Create mutex for dynamic memory library
+        ns_dyn_mem_init(ns_heap, EMAC_HEAP_SIZE, emac_heap_error_handler, NULL);
+        ns_heap_init = true;
+    }
+#endif
 }
 
 emac_mem_buf_t *EmacTestMemoryManager::alloc_heap(uint32_t size, uint32_t align)
@@ -74,7 +122,11 @@ emac_mem_buf_t *EmacTestMemoryManager::alloc_heap(uint32_t size, uint32_t align,
 
     CHECK_ASSERT(buf, "alloc_heap() no memory");
 
+#ifdef ETHMEM_SECTION
+    buf->buffer = ns_dyn_mem_alloc(BUF_HEAD_SIZE + size + align + BUF_TAIL_SIZE);
+#else
     buf->buffer = std::malloc(BUF_HEAD_SIZE + size + align + BUF_TAIL_SIZE);
+#endif
 
     CHECK_ASSERT(buf->buffer, "alloc_heap() no memory");
 
@@ -149,7 +201,7 @@ emac_mem_buf_t *EmacTestMemoryManager::alloc_pool(uint32_t size, uint32_t align,
         if (size_left > pool_buffer_max_size) {
             size_left = size_left - pool_buffer_max_size;
             alloc_size = pool_buffer_max_size;
-        // New smaller than alloc size buffer needed
+            // New smaller than alloc size buffer needed
         } else {
             alloc_size = size_left;
             size_left = 0;
@@ -218,7 +270,12 @@ void EmacTestMemoryManager::free(emac_mem_buf_t *buf)
         emac_memory_t *next = mem_buf->next;
 
         m_mem_buffers.erase(mem_buf_entry);
+
+#ifdef ETHMEM_SECTION
+        ns_dyn_mem_free(mem_buf->buffer);
+#else
         std::free(mem_buf->buffer);
+#endif
         delete mem_buf;
 
         mem_buf = next;
@@ -491,9 +548,9 @@ void EmacTestMemoryManager::validate_list() const
     m_mem_mutex.unlock();
 }
 
-EmacTestMemoryManager &EmacTestMemoryManager::get_instance() {
+EmacTestMemoryManager &EmacTestMemoryManager::get_instance()
+{
     static EmacTestMemoryManager test_memory_manager;
     return test_memory_manager;
 }
 
-#endif

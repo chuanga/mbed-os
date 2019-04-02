@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -209,7 +209,7 @@ dhcpv6_client_server_data_t *libdhcpv6_nonTemporal_entry_get_by_prefix(int8_t in
 {
     ns_list_foreach(dhcpv6_client_server_data_t, cur, &dhcpv6_client_nonTemporal_list) {
         if ((cur->interfaceId == interfaceId) && cur->iaNonTemporalStructValid) {
-            if (memcmp(cur->iaNontemporalAddress.addressPrefix, prefix , 8) == 0) {
+            if (memcmp(cur->iaNontemporalAddress.addressPrefix, prefix, 8) == 0) {
                 return cur;
             }
         }
@@ -220,7 +220,8 @@ dhcpv6_client_server_data_t *libdhcpv6_nonTemporal_entry_get_by_prefix(int8_t in
 uint16_t libdhcpv6_duid_option_size(uint16_t linkType)
 {
     uint16_t length = 8; // Type & Length header part *2
-    if (linkType == DHCPV6_DUID_HARDWARE_EUI64_TYPE) {
+    if (linkType == DHCPV6_DUID_HARDWARE_EUI64_TYPE ||
+            linkType == DHCPV6_DUID_HARDWARE_IEEE_802_NETWORKS_TYPE) {
         length += 8;
     } else {
         length += 6;
@@ -421,7 +422,7 @@ int libdhcpv6_message_option_discover(uint8_t *ptr, uint16_t data_len, uint16_t 
     uint8_t *dptr;
     uint16_t type, length;
     dptr = ptr;
-    if( data_len < 4 ){
+    if (data_len < 4) {
         tr_warn("libdhcpv6_message_option_discover() data_len<4");
         return -1;
     }
@@ -452,7 +453,8 @@ int libdhcpv6_compare_DUID(dhcp_link_options_params_t *targetId, dhcp_link_optio
 {
     if (targetId->linkType == parsedId->linkType) {
         uint8_t cmpLen;
-        if (targetId->linkType == DHCPV6_DUID_HARDWARE_EUI64_TYPE) {
+        if (targetId->linkType == DHCPV6_DUID_HARDWARE_EUI64_TYPE  ||
+                targetId->linkType == DHCPV6_DUID_HARDWARE_IEEE_802_NETWORKS_TYPE) {
             //Compare Current Interface EUID64
             cmpLen = 8;
         } else {
@@ -475,7 +477,7 @@ int libdhcpv6_reply_message_option_validate(dhcp_link_options_params_t *clientId
      *
      */
     /** Verify Client ID */
-    if (libdhcpv6_get_duid_by_selected_type_id_opt(ptr, data_length, DHCPV6_CLIENT_ID_OPTION , clientId) != 0) {
+    if (libdhcpv6_get_duid_by_selected_type_id_opt(ptr, data_length, DHCPV6_CLIENT_ID_OPTION, clientId) != 0) {
         return -1;
     }
 
@@ -500,7 +502,7 @@ int libdhcpv6_advertisment_message_option_validate(dhcp_link_options_params_t *c
      *
      */
     /** Verify Client ID to own EUID64 */
-    if (libdhcpv6_get_duid_by_selected_type_id_opt(ptr, data_length, DHCPV6_CLIENT_ID_OPTION , clientId) != 0) {
+    if (libdhcpv6_get_duid_by_selected_type_id_opt(ptr, data_length, DHCPV6_CLIENT_ID_OPTION, clientId) != 0) {
         return -1;
     }
 
@@ -607,7 +609,7 @@ bool libdhcpv6_rapid_commit_option_at_packet(uint8_t *ptr, uint16_t length)
     return retVal;
 }
 
-int libdhcpv6_get_duid_by_selected_type_id_opt(uint8_t *ptr, uint16_t data_length, uint16_t type , dhcp_link_options_params_t *params)
+int libdhcpv6_get_duid_by_selected_type_id_opt(uint8_t *ptr, uint16_t data_length, uint16_t type, dhcp_link_options_params_t *params)
 {
     dhcp_options_msg_t option_msg;
 
@@ -624,6 +626,8 @@ int libdhcpv6_get_duid_by_selected_type_id_opt(uint8_t *ptr, uint16_t data_lengt
                 if ((params->linkType == DHCPV6_DUID_HARDWARE_EUI48_TYPE) && (option_msg.len == DHCPV6_SERVER_ID_MAC48_OPTION_LEN)) {
                     return 0;
                 } else if ((params->linkType == DHCPV6_DUID_HARDWARE_EUI64_TYPE) && (option_msg.len == DHCPV6_SERVER_ID_MAC64_OPTION_LEN)) {
+                    return 0;
+                } else if ((params->linkType == DHCPV6_DUID_HARDWARE_IEEE_802_NETWORKS_TYPE) && (option_msg.len == DHCPV6_SERVER_ID_MAC64_OPTION_LEN)) {
                     return 0;
                 }
             }
@@ -662,7 +666,7 @@ int libdhcpv6_get_IA_address(uint8_t *ptr, uint16_t data_length, dhcp_ia_non_tem
         params->T1 = common_read_32_bit(t_ptr);
         t_ptr += 4;
 
-        if(length > 4) {
+        if (length > 4) {
             if (libdhcpv6_message_option_discover(t_ptr, length, DHCPV6_STATUS_CODE_OPTION, &option_msg) == 0) {
                 if (option_msg.len >= DHCPV6_STATUS_CODE_OPTION_LEN) {
                     status_code = common_read_16_bit(option_msg.msg_ptr);
@@ -683,6 +687,11 @@ int libdhcpv6_get_IA_address(uint8_t *ptr, uint16_t data_length, dhcp_ia_non_tem
                     return 0;
                 }
             }
+        } else if (length == 0) {
+            params->nonTemporalAddress = NULL;
+            params->preferredValidLifeTime = 0;
+            params->validLifeTime = 0;
+            return 0;
         }
     }
     return -1;
@@ -793,6 +802,45 @@ uint16_t libdhcpv6_solication_message_length(uint16_t clientLinkType, bool addre
     length += libdhcpv6_non_temporal_address_size(addressDefined);
     length += libdhcvp6_request_option_size(requestOptionCount);
     return length;
+}
+
+
+uint8_t *libdhcpv6_dhcp_relay_msg_write(uint8_t *ptr, uint8_t type, uint8_t hop_limit,  uint8_t *peer_addres, uint8_t *link_address)
+{
+    *ptr++ = type;
+    *ptr++ = hop_limit;
+    memcpy(ptr, link_address, 16);
+    ptr += 16;
+    memcpy(ptr, peer_addres, 16);
+    ptr += 16;
+    return ptr;
+}
+
+uint8_t *libdhcpv6_dhcp_option_header_write(uint8_t *ptr, uint16_t length)
+{
+    ptr = common_write_16_bit(DHCPV6_OPTION_RELAY, ptr);
+    ptr = common_write_16_bit(length, ptr);
+    return ptr;
+}
+
+bool libdhcpv6_relay_msg_read(uint8_t *ptr, uint16_t length, dhcpv6_relay_msg_t *relay_msg)
+{
+    if (length < DHCPV6_RELAY_LENGTH + 4) {
+        return false;
+    }
+    // Relay message base first
+    relay_msg->type = *ptr++;
+    relay_msg->hop_limit = *ptr++;
+    relay_msg->link_address = ptr;
+    relay_msg->peer_address = ptr + 16;
+    ptr += 32;
+    //Discover
+    if (libdhcpv6_message_option_discover(ptr, length - 34, DHCPV6_OPTION_RELAY, &relay_msg->relay_options) != 0) {
+        return false;
+    }
+
+
+    return true;
 }
 
 #endif

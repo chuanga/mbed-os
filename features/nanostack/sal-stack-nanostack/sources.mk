@@ -11,12 +11,33 @@ SRCS += \
 	source/6LoWPAN/IPHC_Decode/lowpan_context.c \
 	source/6LoWPAN/MAC/beacon_handler.c \
 	source/6LoWPAN/MAC/mac_helper.c \
+	source/6LoWPAN/MAC/mac_ie_lib.c \
 	source/6LoWPAN/MAC/mac_response_handler.c \
 	source/6LoWPAN/MAC/mac_data_poll.c \
 	source/6LoWPAN/MAC/mac_pairwise_key.c \
 	source/6LoWPAN/Mesh/mesh.c \
 	source/6LoWPAN/ND/nd_router_object.c \
 	source/6LoWPAN/NVM/nwk_nvm.c \
+	source/6LoWPAN/ws/ws_ie_lib.c \
+	source/6LoWPAN/ws/ws_llc_data_service.c \
+	source/6LoWPAN/ws/ws_mpx_header.c \
+	source/6LoWPAN/ws/ws_neighbor_class.c \
+	source/6LoWPAN/ws/ws_bootstrap.c \
+	source/6LoWPAN/ws/ws_common.c \
+	source/6LoWPAN/ws/ws_management_api.c \
+	source/6LoWPAN/ws/ws_bbr_api.c \
+	source/6LoWPAN/ws/ws_test_api.c \
+	source/6LoWPAN/ws/ws_empty_functions.c \
+	source/6LoWPAN/ws/ws_pae_controller.c \
+	source/6LoWPAN/ws/ws_pae_supp.c \
+	source/6LoWPAN/ws/ws_pae_auth.c \
+	source/6LoWPAN/ws/ws_pae_lib.c \
+	source/6LoWPAN/ws/ws_pae_nvm_data.c \
+	source/6LoWPAN/ws/ws_pae_nvm_store.c \
+	source/6LoWPAN/ws/ws_eapol_relay.c \
+	source/6LoWPAN/ws/ws_eapol_auth_relay.c \
+	source/6LoWPAN/ws/ws_eapol_relay_lib.c \
+	source/6LoWPAN/ws/ws_eapol_pdu.c \
 	source/BorderRouter/border_router.c \
 	source/Common_Protocols/icmpv6.c \
 	source/Common_Protocols/icmpv6_prefix.c \
@@ -28,7 +49,7 @@ SRCS += \
 	source/Common_Protocols/mld.c \
 	source/Common_Protocols/tcp.c \
 	source/Common_Protocols/udp.c \
-	source/Core/address.c \
+	source/Core/ns_address_internal.c \
 	source/Core/buffer_dyn.c \
 	source/Core/sockbuf.c \
 	source/Core/ns_socket.c \
@@ -74,6 +95,25 @@ SRCS += \
 	source/RPL/rpl_mrhof.c \
 	source/RPL/rpl_policy.c \
 	source/Security/Common/security_lib.c \
+	source/Security/eapol/eapol_helper.c \
+	source/Security/eapol/kde_helper.c \
+	source/Security/kmp/kmp_api.c \
+	source/Security/kmp/kmp_addr.c \
+	source/Security/kmp/kmp_eapol_pdu_if.c \
+	source/Security/kmp/kmp_socket_if.c \
+	source/Security/protocols/sec_prot_lib.c \
+	source/Security/protocols/sec_prot_keys.c \
+	source/Security/protocols/sec_prot_certs.c \
+	source/Security/protocols/key_sec_prot/key_sec_prot.c \
+	source/Security/protocols/eap_tls_sec_prot/auth_eap_tls_sec_prot.c \
+	source/Security/protocols/eap_tls_sec_prot/supp_eap_tls_sec_prot.c \
+	source/Security/protocols/eap_tls_sec_prot/eap_tls_sec_prot_lib.c \
+	source/Security/protocols/fwh_sec_prot/auth_fwh_sec_prot.c \
+	source/Security/protocols/fwh_sec_prot/supp_fwh_sec_prot.c \
+	source/Security/protocols/gkh_sec_prot/auth_gkh_sec_prot.c \
+	source/Security/protocols/gkh_sec_prot/supp_gkh_sec_prot.c \
+	source/Security/protocols/tls_sec_prot/tls_sec_prot.c \
+	source/Security/protocols/tls_sec_prot/tls_sec_prot_lib.c \
 	source/Security/PANA/eap_protocol.c \
 	source/Security/PANA/pana.c \
 	source/Security/PANA/pana_avp.c \
@@ -84,17 +124,23 @@ SRCS += \
 	source/Security/TLS/tls_lib.c \
 	source/Security/TLS/tls_ccm_crypt.c \
 	source/Service_Libs/CCM_lib/ccm_security.c \
-	source/Service_Libs/fhss/fhss_beacon.c \
-	source/Service_Libs/fhss/fhss_beacon_tasklet.c \
 	source/Service_Libs/fhss/fhss_channel.c \
-	source/Service_Libs/fhss/fhss_mac_interface.c \
 	source/Service_Libs/fhss/fhss_configuration_interface.c \
 	source/Service_Libs/fhss/fhss_statistics.c \
 	source/Service_Libs/fhss/fhss.c \
+	source/Service_Libs/fhss/fhss_ws.c \
+	source/Service_Libs/fhss/fhss_ws_empty_functions.c \
+	source/Service_Libs/fhss/fhss_common.c \
+	source/Service_Libs/fhss/channel_functions.c \
 	source/Service_Libs/fhss/channel_list.c \
 	source/Service_Libs/fnv_hash/fnv_hash.c \
+	source/Service_Libs/hmac/hmac_sha1.c \
+	source/Service_Libs/ieee_802_11/ieee_802_11.c \
+	source/Service_Libs/nist_aes_kw/nist_aes_kw.c \
+	source/Service_Libs/mac_neighbor_table/mac_neighbor_table.c \
 	source/Service_Libs/mle_service/mle_service.c \
 	source/Service_Libs/mle_service/mle_service_buffer.c \
+	source/Service_Libs/mle_service/mle_service_frame_counter_table.c \
 	source/Service_Libs/mle_service/mle_service_interface.c \
 	source/Service_Libs/mle_service/mle_service_security.c \
 	source/Service_Libs/blacklist/blacklist.c \
@@ -117,13 +163,14 @@ SRCS += \
 	source/6LoWPAN/Thread/thread_common.c \
 	source/6LoWPAN/Thread/thread_joiner_application.c \
 	source/6LoWPAN/Thread/thread_leader_service.c \
+	source/6LoWPAN/Thread/thread_neighbor_class.c \
 	source/6LoWPAN/Thread/thread_management_server.c \
 	source/6LoWPAN/Thread/thread_management_client.c \
 	source/6LoWPAN/Thread/thread_network_synch.c \
 	source/6LoWPAN/Thread/thread_bootstrap.c \
+	source/6LoWPAN/Thread/thread_dhcpv6_server.c \
 	source/6LoWPAN/Thread/thread_host_bootstrap.c \
 	source/6LoWPAN/Thread/thread_router_bootstrap.c \
-	source/6LoWPAN/Thread/thread_dhcpv6_client.c \
 	source/6LoWPAN/Thread/thread_discovery.c \
 	source/6LoWPAN/Thread/thread_commissioning_if.c \
 	source/6LoWPAN/Thread/thread_net_config_api.c \
@@ -140,6 +187,7 @@ SRCS += \
 	source/6LoWPAN/Thread/thread_lowpower_private_api.c \
 	source/6LoWPAN/Thread/thread_nvm_store.c \
 	source/DHCPv6_Server/DHCPv6_Server_service.c \
+	source/DHCPv6_client/dhcpv6_client_service.c \
 	source/libDHCPv6/dhcp_service_api.c \
 	source/libDHCPv6/libDHCPv6.c \
 	source/libDHCPv6/libDHCPv6_server.c \

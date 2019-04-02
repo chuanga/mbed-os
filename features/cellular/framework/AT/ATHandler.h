@@ -20,13 +20,12 @@
 
 #include "platform/mbed_retarget.h"
 
-#include "EventQueue.h"
+#include "events/EventQueue.h"
 #include "PlatformMutex.h"
 #include "nsapi_types.h"
 
 #include "PlatformMutex.h"
 #include "Callback.h"
-#include "EventQueue.h"
 
 namespace mbed {
 
@@ -53,16 +52,13 @@ enum DeviceErrorType {
     DeviceErrorTypeErrorCME     // AT ERROR CME
 };
 
-/* struct used when getting at response error. Defines error code and type */
+/** AT response error with error code and type */
 struct device_err_t {
     DeviceErrorType errType;
     int errCode;
 };
 
-/** Class ATHandler
- *
- *  Class for sending AT commands and parsing AT responses.
- */
+/// Class for sending AT commands and parsing AT responses.
 class ATHandler {
 
 public:
@@ -74,14 +70,40 @@ public:
      *  @param output_delimiter delimiter used when parsing at responses, "\r" should be used as output_delimiter
      *  @param send_delay       the minimum delay in ms between the end of last response and the beginning of a new command
      */
-    ATHandler(FileHandle *fh, events::EventQueue &queue, int timeout, const char *output_delimiter, uint16_t send_delay = 0);
-    ~ATHandler();
+    ATHandler(FileHandle *fh, events::EventQueue &queue, uint32_t timeout, const char *output_delimiter, uint16_t send_delay = 0);
+    virtual ~ATHandler();
 
     /** Return used file handle.
      *
      *  @return used file handle
      */
     FileHandle *get_file_handle();
+
+    /** Get a new ATHandler instance, and update the linked list. Once the use of the ATHandler
+     *  has finished, call to close() has to be made
+     *
+     *  @param fileHandle       filehandle used for reading AT responses and writing AT commands.
+     *                          If there is already an ATHandler with the same fileHandle pointer,
+     *                          then a pointer to that ATHandler instance will be returned with
+     *                          that ATHandler's queue, timeout, delimiter, send_delay and debug_on
+     *                          values
+     *  @param queue            Event queue used to transfer sigio events to this thread
+     *  @param timeout          Timeout when reading for AT response
+     *  @param delimiter        delimiter used when parsing at responses, "\r" should be used as output_delimiter
+     *  @param send_delay       the minimum delay in ms between the end of last response and the beginning of a new command
+     *  @param debug_on         Set true to enable debug traces
+     *  @return                 NULL, if fileHandle is not set, or a pointer to an existing ATHandler, if the fileHandle is
+     *                          already in use. Otherwise a pointer to a new ATHandler instance is returned
+     */
+    static ATHandler *get_instance(FileHandle *fileHandle, events::EventQueue &queue, uint32_t timeout,
+                                   const char *delimiter, uint16_t send_delay, bool debug_on);
+
+    /** Close and delete the current ATHandler instance, if the reference count to it is 0.
+     *  Close() can be only called, if the ATHandler was opened with get_instance()
+     *
+     *  @return NSAPI_ERROR_OK on success, NSAPI_ERROR_PARAMETER on failure
+     */
+    nsapi_error_t close();
 
     /** Locks the mutex for file handle if AT_HANDLER_MUTEX is defined.
      */
@@ -97,21 +119,12 @@ public:
      */
     nsapi_error_t unlock_return_error();
 
-    /** Set the urc callback for urc. If urc is found when parsing AT responses, then call if called.
-     *  If urc is already set then it's not set twice.
+    /** Set callback function for URC
      *
-     *  @param prefix   Register urc prefix for callback. Urc could be for example "+CMTI: "
-     *  @param callback Callback, which is called if urc is found in AT response
-     *  @return NSAPI_ERROR_OK or NSAPI_ERROR_NO_MEMORY if no memory
+     *  @param prefix   URC text to look for, e.g. "+CMTI:"
+     *  @param callback function to call on prefix, or 0 to remove callback
      */
-    nsapi_error_t set_urc_handler(const char *prefix, mbed::Callback<void()> callback);
-
-    /** Remove urc handler from linked list of urc's
-     *
-     *  @param prefix   Register urc prefix for callback. Urc could be for example "+CMTI: "
-     *  @param callback Callback, which is called if urc is found in AT response
-     */
-    void remove_urc_handler(const char *prefix, mbed::Callback<void()> callback);
+    void set_urc_handler(const char *prefix, Callback<void()> callback);
 
     ATHandler *_nextATHandler; // linked list
 
@@ -128,10 +141,14 @@ public:
     device_err_t get_last_device_error() const;
 
     /** Increase reference count. Used for counting references to this instance.
+     *  Note that this should be used with care, if the ATHandler was taken into use
+     *  with get_instance()
      */
     void inc_ref_count();
 
     /** Decrease reference count. Used for counting references to this instance.
+     *  Note that this should be used with care, if the ATHandler was taken into use
+     *  with get_instance()
      */
     void dec_ref_count();
 
@@ -147,6 +164,13 @@ public:
      *  @param default_timeout       Store as default timeout
      */
     void set_at_timeout(uint32_t timeout_milliseconds, bool default_timeout = false);
+
+    /** Set timeout in milliseconds for all ATHandlers in the _atHandlers list
+     *
+     *  @param timeout_milliseconds  Timeout in milliseconds
+     *  @param default_timeout       Store as default timeout
+     */
+    static void set_at_timeout_list(uint32_t timeout_milliseconds, bool default_timeout = false);
 
     /** Restore timeout to previous timeout. Handy if there is a need to change timeout temporarily.
      */
@@ -165,15 +189,25 @@ public:
      */
     void process_oob();
 
-    /** Set sigio for the current file handle. Sigio event goes through eventqueue so that it's handled in current thread.
-     */
-    void set_filehandle_sigio();
-
     /** Set file handle, which is used for reading AT responses and writing AT commands
      *
      *  @param fh file handle used for reading AT responses and writing AT commands
      */
     void set_file_handle(FileHandle *fh);
+
+    /** Set is file handle usable. Some situations like after going to data mode, file handle is not usable anymore.
+     *  Any items in queue are not to be processed.
+     *
+     *  @param usable true for usable filehandle
+     */
+    void set_is_filehandle_usable(bool usable);
+
+    /** Synchronize AT command and response handling to modem.
+     *
+     *  @param timeout_ms ATHandler timeout when trying to sync. Will be restored when function returns.
+     *  @return true is synchronization was successful, false in case of failure
+     */
+    bool sync(int timeout_ms);
 
 protected:
     void event();
@@ -182,6 +216,11 @@ protected:
 #endif
     FileHandle *_fileHandle;
 private:
+    /** Remove urc handler from linked list of urc's
+     *
+     *  @param prefix   Register urc prefix for callback. Urc could be for example "+CMTI: "
+     */
+    void remove_urc_handler(const char *prefix);
 
     void set_error(nsapi_error_t err);
 
@@ -195,7 +234,7 @@ private:
     struct oob_t {
         const char *prefix;
         int prefix_len;
-        mbed::Callback<void()> cb;
+        Callback<void()> cb;
         oob_t *next;
     };
     oob_t *_oobs;
@@ -205,10 +244,11 @@ private:
     uint16_t _at_send_delay;
     uint64_t _last_response_stop;
 
-    bool _fh_sigio_set;
-
-    bool _processing;
+    bool _oob_queued;
     int32_t _ref_count;
+    bool _is_fh_usable;
+
+    static ATHandler *_atHandlers;
 
     //*************************************
 public:
@@ -218,7 +258,7 @@ public:
      *
      *  @param cmd  AT command to be written to modem
      */
-    void cmd_start(const char *cmd);
+    virtual void cmd_start(const char *cmd);
 
     /** Writes integer type AT command subparameter. Starts with the delimiter if not the first param after cmd_start.
      *  In case of failure when writing, the last error is set to NSAPI_ERROR_DEVICE_ERROR.
@@ -239,6 +279,11 @@ public:
     /** Stops the AT command by writing command-line terminator CR to mark command as finished.
      */
     void cmd_stop();
+
+    /** Stops the AT command by writing command-line terminator CR to mark command as finished and reads the OK/ERROR response.
+     *
+     */
+    void cmd_stop_read_resp();
 
     /** Write bytes without any subparameter delimiters, such as comma.
      *  In case of failure when writing, the last error is set to NSAPI_ERROR_DEVICE_ERROR.
@@ -269,6 +314,12 @@ public:
      */
     void set_default_delimiter();
 
+    /** Defines behaviour for using or ignoring the delimiter within an AT command
+     *
+     *  @param use_delimiter indicating if delimiter should be used or not
+     */
+    void use_delimiter(bool use_delimiter);
+
     /** Consumes the reading buffer up to the delimiter or stop_tag
      *
      *  @param count number of parameters to be skipped
@@ -294,7 +345,7 @@ public:
      *  Stops on delimiter or stop tag.
      *
      *  @param str output buffer for the read
-     *  @param size maximum number of chars to output
+     *  @param size maximum number of chars to output including NULL
      *  @param read_even_stop_tag if true then try to read even if the stop tag was found previously
      *  @return length of output string or -1 in case of read timeout before delimiter or stop tag is found
      */
@@ -339,7 +390,8 @@ public:
      *   If needed, it ends the scope of a previous information response.
      *   Sets the information response scope if new prefix is found and response scope if prefix is not found.
      *
-     *  @return true if new information response is found, false otherwise
+     *  @return true if prefix defined for information response is not empty string and is found,
+     *          false otherwise.
      */
     bool info_resp();
 
@@ -374,6 +426,19 @@ public: // just for debugging
      *  @param debug_on Enable/disable debugging
      */
     void set_debug(bool debug_on);
+
+    /**
+     * Get degug state set by @ref set_debug
+     *
+     *  @return current state of debug
+     */
+    bool get_debug() const;
+
+    /** Set debug_on for all ATHandlers in the _atHandlers list
+     *
+     *  @param debug_on Set true to enable debug traces
+     */
+    static void set_debug_list(bool debug_on);
 
 private:
 
@@ -423,6 +488,7 @@ private:
     char _info_resp_prefix[BUFF_SIZE];
     bool _debug_on;
     bool _cmd_start;
+    bool _use_delimiter;
 
     // time when a command or an URC processing was started
     uint64_t _start_time;
@@ -502,12 +568,10 @@ private:
     const char *mem_str(const char *dest, size_t dest_len, const char *src, size_t src_len);
 
     // check is urc is already added
-    bool find_urc_handler(const char *prefix, mbed::Callback<void()> callback);
-
-    ssize_t read(char *buf, size_t size, bool read_even_stop_tag, bool hex);
+    bool find_urc_handler(const char *prefix);
 
     // print contents of a buffer to trace log
-    void debug_print(char *p, int len);
+    void debug_print(const char *p, int len);
 };
 
 } // namespace mbed

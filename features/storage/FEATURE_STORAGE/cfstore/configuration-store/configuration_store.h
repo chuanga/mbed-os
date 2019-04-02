@@ -129,8 +129,6 @@ extern "C" {
 #define ARM_CFSTORE_DRIVER_ERROR_JOURNAL_STATUS_EMPTY                               -1033
 #define ARM_CFSTORE_DRIVER_ERROR_JOURNAL_STATUS_SMALL_LOG_REQUEST                   -1034
 #define ARM_CFSTORE_DRIVER_ERROR_OPERATION_PENDING                                  -1035
-#define ARM_CFSTORE_DRIVER_ERROR_UVISOR_BOX_ID                                      -1036
-#define ARM_CFSTORE_DRIVER_ERROR_UVISOR_NAMESPACE                                   -1037
 /// @endcond
 
 
@@ -165,7 +163,7 @@ typedef struct _ARM_CFSTORE_STATUS {
     ARM_CFSTORE_HANDLE (__name) = (ARM_CFSTORE_HANDLE) (__name##_buf_cFsToRe);  \
     memset((__name##_buf_cFsToRe), 0, CFSTORE_HANDLE_BUFSIZE)
 
-#if defined __MBED__ && (defined TOOLCHAIN_GCC_ARM || defined TOOLCHAIN_ARMC6)
+#if defined __MBED__ && (defined TOOLCHAIN_GCC_ARM || (defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)))
 /** @brief  Helper macro to swap 2 handles, which is useful for the Find() idiom. */
 #define CFSTORE_HANDLE_SWAP(__a_HaNdLe, __b_HaNdLe)         \
     do{ ARM_CFSTORE_HANDLE __temp_HaNdLe = (__a_HaNdLe);    \
@@ -176,6 +174,7 @@ typedef struct _ARM_CFSTORE_STATUS {
         __asm volatile("" ::: "memory");                    \
     }while(0)
 
+        
 #elif defined __MBED__ && defined TOOLCHAIN_ARM
 /** @brief  Helper macro to swap 2 handles, which is useful for the Find() idiom. */
 #define CFSTORE_HANDLE_SWAP(__a_HaNdLe, __b_HaNdLe)         \
@@ -308,7 +307,6 @@ typedef struct ARM_CFSTORE_CAPABILITIES
 {
     uint32_t asynchronous_ops : 1;          //!< When set then the configuration store dispatch interface is operating in non-blocking (asynchronous) mode.
                                             //!< When unset then the configuration store dispatch interface is operating in blocking (synchronous) mode.
-    uint32_t uvisor_support_enabled : 1;    //!< The configuration store is using uvisor security contexts.
 } ARM_CFSTORE_CAPABILITIES;
 
 

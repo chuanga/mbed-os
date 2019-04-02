@@ -36,8 +36,7 @@
  *
  */
 
-#if DEVICE_I2C
-
+#if DEVICE_I2C && DEVICE_LPTICKER
 /* I2C
  *
  * This HAL implementation uses the nrf_drv_twi.h API primarily but switches to TWI for the
@@ -54,6 +53,7 @@
 
 #include "object_owners.h"
 #include "pinmap_ex.h"
+#include "PeripheralPins.h"
 
 #include "nrf_drv_twi.h"
 #include "nrf_drv_common.h"
@@ -131,8 +131,6 @@ void i2c_init(i2c_t *obj, PinName sda, PinName scl)
 
     if (first_init) {
         first_init = false;
-        /* Initialize low power ticker. Used for timeouts. */
-        lp_ticker_init();
 
         /* Register interrupt handlers in driver with the NVIC. */
         NVIC_SetVector(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0_IRQn, (uint32_t) SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0_IRQHandler);
@@ -169,6 +167,26 @@ void i2c_frequency(i2c_t *obj, int hz)
     /* Only store frequency in object. Configuration happens at the beginning of each transaction. */
     config->frequency = new_frequency;
     config->update = true;
+}
+
+const PinMap *i2c_master_sda_pinmap()
+{
+    return PinMap_I2C_testing;
+}
+
+const PinMap *i2c_master_scl_pinmap()
+{
+    return PinMap_I2C_testing;
+}
+
+const PinMap *i2c_slave_sda_pinmap()
+{
+    return PinMap_I2C_testing;
+}
+
+const PinMap *i2c_slave_scl_pinmap()
+{
+    return PinMap_I2C_testing;
 }
 
 

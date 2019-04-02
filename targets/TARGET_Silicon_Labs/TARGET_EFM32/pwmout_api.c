@@ -302,7 +302,7 @@ void pwmout_period(pwmout_t *obj, float seconds)
     }
 
     //Check if anything changed
-    if(((PWM_TIMER->CTRL & ~_TIMER_CTRL_PRESC_MASK) == (pwm_prescaler_div << _TIMER_CTRL_PRESC_SHIFT)) && (TIMER_TopGet(PWM_TIMER) == cycles)) return;
+    if(((PWM_TIMER->CTRL & _TIMER_CTRL_PRESC_MASK) == (pwm_prescaler_div << _TIMER_CTRL_PRESC_SHIFT)) && (TIMER_TopGet(PWM_TIMER) == cycles)) return;
 
     //Save previous period for recalculation of duty cycles
     uint32_t previous_period_cycles = PWM_TIMER->TOPB;
@@ -350,6 +350,11 @@ void pwmout_pulsewidth_us(pwmout_t *obj, int us)
 {
     uint16_t width_cycles = (uint16_t) ((REFERENCE_FREQUENCY >> pwm_prescaler_div) * us) / 1000000;
     TIMER_CompareBufSet(PWM_TIMER, obj->channel, width_cycles);
+}
+
+const PinMap *pwmout_pinmap()
+{
+    return PinMap_PWM;
 }
 
 #endif

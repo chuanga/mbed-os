@@ -29,7 +29,7 @@
   */
 
 #include "stm32l0xx.h"
-#include "mbed_assert.h"
+#include "mbed_error.h"
 
 /*!< Uncomment the following line if you need to relocate your vector Table in
      Internal SRAM. */
@@ -82,8 +82,12 @@ void SystemInit (void)
 #ifdef VECT_TAB_SRAM
     SCB->VTOR = SRAM_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal SRAM */
 #else
+#ifdef APPLICATION_ADDR
+    SCB->VTOR = APPLICATION_ADDR; /* Vector Table Relocation in Internal FLASH to offset application*/
+#else 
     SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal FLASH */
-#endif
+#endif // end APPLICATION_ADDR
+#endif // end VECT_TAB_SRAM
 
 }
 
@@ -112,8 +116,8 @@ void SetSysClock(void)
             if (SetSysClock_PLL_HSI() == 0)
 #endif
             {
-                while(1) {
-                    MBED_ASSERT(1);
+                {
+                    error("SetSysClock failed\n");
                 }
             }
         }

@@ -86,8 +86,9 @@ class IAR(Exporter):
             "CExtraOptionsCheck": 0,
             "CExtraOptions": "",
             "CMSISDAPJtagSpeedList": 0,
+            "DSPExtension": 0,
+            "TrustZone": 0,
         }
-
         iar_defaults.update(device_info)
         IARdevice = namedtuple('IARdevice', iar_defaults.keys())
         return IARdevice(**iar_defaults)
@@ -109,11 +110,11 @@ class IAR(Exporter):
             raise NotSupportedException("No linker script found.")
         srcs = self.resources.headers + self.resources.s_sources + \
                self.resources.c_sources + self.resources.cpp_sources + \
-               self.resources.objects + self.resources.libraries
+               self.resources.objects + self.libraries
         flags = self.flags
         c_flags = list(set(flags['common_flags']
-                                    + flags['c_flags']
-                                    + flags['cxx_flags']))
+                           + flags['c_flags']
+                           + flags['cxx_flags']))
         # Flags set in template to be set by user in IDE
         template = ["--vla", "--no_static_destruction"]
         # Flag invalid if set in template
@@ -126,6 +127,10 @@ class IAR(Exporter):
         except TargetNotSupportedException:
             debugger = "CMSISDAP"
 
+        trustZoneMode = 0
+        if self.toolchain.target.core.endswith("-NS"):
+            trustZoneMode = 1
+
         ctx = {
             'name': self.project_name,
             'groups': self.iar_groups(self.format_src(srcs)),
@@ -133,7 +138,8 @@ class IAR(Exporter):
             'include_paths': [self.format_file(src) for src in self.resources.inc_dirs],
             'device': self.iar_device(),
             'ewp': sep+self.project_name + ".ewp",
-            'debugger': debugger
+            'debugger': debugger,
+            'trustZoneMode': trustZoneMode,
         }
         ctx.update(flags)
 
@@ -200,5 +206,3 @@ class IAR(Exporter):
             return -1
         else:
             return 0
-
-

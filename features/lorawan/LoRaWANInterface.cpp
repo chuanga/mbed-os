@@ -1,7 +1,7 @@
 /**
  * @file
  *
- * @brief      Implementation of LoRaWANBase
+ * @brief      A LoRaWAN network interface
  *
  * Copyright (c) 2017, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
@@ -20,16 +20,31 @@
  */
 
 #include "LoRaWANInterface.h"
+#include "lorastack/phy/loraphy_target.h"
+#include "mbed-trace/mbed_trace.h"
+#define TRACE_GROUP "LSTK"
 
+using namespace mbed;
 using namespace events;
 
-LoRaWANInterface::LoRaWANInterface(LoRaRadio& radio)
+LoRaWANInterface::LoRaWANInterface(LoRaRadio &radio)
+    : _default_phy(NULL)
 {
-    _lw_stack.bind_radio_driver(radio);
+    _default_phy = new LoRaPHY_region;
+    MBED_ASSERT(_default_phy);
+    _lw_stack.bind_phy_and_radio_driver(radio, *_default_phy);
+}
+
+LoRaWANInterface::LoRaWANInterface(LoRaRadio &radio, LoRaPHY &phy)
+    : _default_phy(NULL)
+{
+    _lw_stack.bind_phy_and_radio_driver(radio, phy);
 }
 
 LoRaWANInterface::~LoRaWANInterface()
 {
+    delete _default_phy;
+    _default_phy = NULL;
 }
 
 lorawan_status_t LoRaWANInterface::initialize(EventQueue *queue)
@@ -116,19 +131,43 @@ lorawan_status_t LoRaWANInterface::remove_channel_plan()
     return _lw_stack.drop_channel_list();
 }
 
-int16_t LoRaWANInterface::send(uint8_t port, const uint8_t* data, uint16_t length, int flags)
+int16_t LoRaWANInterface::send(uint8_t port, const uint8_t *data, uint16_t length, int flags)
 {
     Lock lock(*this);
     return _lw_stack.handle_tx(port, data, length, flags);
 }
 
-int16_t LoRaWANInterface::receive(uint8_t port, uint8_t* data, uint16_t length, int flags)
+lorawan_status_t LoRaWANInterface::cancel_sending(void)
+{
+    Lock lock(*this);
+    return _lw_stack.stop_sending();
+}
+
+lorawan_status_t LoRaWANInterface::get_tx_metadata(lorawan_tx_metadata &metadata)
+{
+    Lock lock(*this);
+    return _lw_stack.acquire_tx_metadata(metadata);
+}
+
+lorawan_status_t LoRaWANInterface::get_rx_metadata(lorawan_rx_metadata &metadata)
+{
+    Lock lock(*this);
+    return _lw_stack.acquire_rx_metadata(metadata);
+}
+
+lorawan_status_t LoRaWANInterface::get_backoff_metadata(int &backoff)
+{
+    Lock lock(*this);
+    return _lw_stack.acquire_backoff_metadata(backoff);
+}
+
+int16_t LoRaWANInterface::receive(uint8_t port, uint8_t *data, uint16_t length, int flags)
 {
     Lock lock(*this);
     return _lw_stack.handle_rx(data, length, port, flags, true);
 }
 
-int16_t LoRaWANInterface::receive(uint8_t* data, uint16_t length, uint8_t& port, int& flags)
+int16_t LoRaWANInterface::receive(uint8_t *data, uint16_t length, uint8_t &port, int &flags)
 {
     Lock lock(*this);
     return _lw_stack.handle_rx(data, length, port, flags, false);
